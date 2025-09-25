@@ -1,6 +1,9 @@
 import time
-import tifffile as tiff
 import glob
+from itertools import repeat
+from multiprocessing import Pool # TODO: Add multiprocessing
+
+import tifffile as tiff
 import numpy as np
 from tqdm import tqdm # NOTE: Should I keep this?
 
@@ -59,7 +62,7 @@ def normalize_by_coi_intensity(pixel_intensities: np.ndarray):
     non_coi_channels = pixel_intensities[:, 1:]
     coi_intensity = pixel_intensities[:, [0]]
     normalized_ratios = non_coi_channels / coi_intensity
-    return normalized_ratios
+    return normalized_ratios.astype(np.float32) # May change this afterwards.
 
 
 def build_header(channel_order: list[int], channel_of_interest: int): 
@@ -81,8 +84,8 @@ def build_pixel_report_tsv(image_name: str, raw_pixel_intensities: np.ndarray, p
 
         pos_x, pos_y = pixel_coords[1][i], pixel_coords[0][i]
 
-        raw_intensity  = raw_pixel_intensities[i]
-        normalized_intensity = normalized_intensities[i]
+        raw_intensity  = raw_pixel_intensities[i].astype(str)
+        normalized_intensity = normalized_intensities[i].astype(str)
 
         row = [image_name, str(pos_x), str(pos_y), *raw_intensity, *normalized_intensity]
 
@@ -91,13 +94,12 @@ def build_pixel_report_tsv(image_name: str, raw_pixel_intensities: np.ndarray, p
     return "\n".join(file_content) + "\n"
 
 
-
 def main(image_folder, channel_of_interest, threshold, out_fname):
     has_header = False
 
     images_path = get_images_path(image_folder)
     images = image_iter(images_path)
-
+    
     with open(out_fname, "w") as f:
 
         for img, img_name in tqdm(images, total=len(images_path)):
@@ -117,10 +119,7 @@ def main(image_folder, channel_of_interest, threshold, out_fname):
             file_content = build_pixel_report_tsv(img_name, pixel_intensities, threshold_indices, pixel_ratios)
             f.write(file_content)
 
-
 if __name__ == "__main__":
     start_time = time.time()
     main(IMG_FOLDER, CHANNEL_OF_INTEREST, THRESHOLD, OUT_FNAME)      
     print(f"Finished in {time.time() - start_time} seconds")
-
-
