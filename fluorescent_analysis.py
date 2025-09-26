@@ -29,6 +29,14 @@ def image_iter(images_path: list[str]):
         yield image, path
 
 
+def get_thresholded_coi_indices(image: np.ndarray, channel_of_interest: int, intensity_threshold: int = 1000): # NOTE: 0-based basically channel 1 is 0 and channel 2 is 1
+    """
+    TODO
+    """
+    threshold_indices  = np.where(image[channel_of_interest - 1] >= intensity_threshold)
+    return threshold_indices 
+
+
 def reorder_channels(image: np.ndarray, channel_of_interest: int):
     """
     TODO
@@ -36,14 +44,6 @@ def reorder_channels(image: np.ndarray, channel_of_interest: int):
     order = [channel_of_interest - 1, *[i for i in range(image.shape[0]) if i != channel_of_interest - 1]]
     image_reordered = image[order, ...]
     return image_reordered, order
-
-
-def get_thresholded_coi_indices(image: np.ndarray, intensity_threshold: int = 1000): # NOTE: 0-based basically channel 1 is 0 and channel 2 is 1
-    """
-    TODO
-    """
-    threshold_indices  = np.where(image[0] >= intensity_threshold)
-    return threshold_indices 
 
 
 def get_channel_intensity(image: np.ndarray, filtered_channel_idx: tuple[np.ndarray, np.ndarray]):
@@ -103,7 +103,13 @@ def main(image_folder, channel_of_interest, threshold, out_fname):
     with open(out_fname, "w") as f:
 
         for img, img_name in tqdm(images, total=len(images_path)):
-            img_name = img_name.split("\\")[-1].split(".")[0]
+
+            threshold_indices = get_thresholded_coi_indices(img, channel_of_interest, threshold) 
+
+            if not threshold_indices: # if no pixels above threshold exist it will pass to the next iteration
+                continue
+
+            img_name = img_name.split("\\")[-1].split(".")[0] 
             
             img_reordered, order = reorder_channels(img, channel_of_interest)
 
@@ -112,7 +118,6 @@ def main(image_folder, channel_of_interest, threshold, out_fname):
                 f.write(header)
                 has_header = True
 
-            threshold_indices = get_thresholded_coi_indices(img_reordered, threshold)  # if this is empty will raise error, so make a condition
             pixel_intensities = get_channel_intensity(img_reordered, threshold_indices)
             pixel_ratios = normalize_by_coi_intensity(pixel_intensities)
 
