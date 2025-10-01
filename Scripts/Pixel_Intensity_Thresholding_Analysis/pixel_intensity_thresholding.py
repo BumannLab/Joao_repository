@@ -1,16 +1,21 @@
+# TODO: Add multiprocessing
+from multiprocessing import Pool 
+# TODO: Add CLI, use click
+# TODO: Make clusters of nearby pixels
+
 import time
 import glob
-from itertools import repeat
-from multiprocessing import Pool # TODO: Add multiprocessing
 
 import tifffile as tiff
 import numpy as np
 from tqdm import tqdm # NOTE: Should I keep this?
+from skimage import measure
 
-IMG_FOLDER = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
-CHANNEL_OF_INTEREST = 2 # 1-based & Channel of Interest == coi
-THRESHOLD = 2000
-OUT_FNAME = "Fluorescent_thresholding_over_2000_updated_normalized.tsv"
+
+IMG_FOLDER = "Joao_repository/Images/Cropped_Images_test/" #"U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
+CHANNEL_OF_INTEREST = 1 # 1-based & Channel of Interest == coi
+THRESHOLD = 1000
+OUT_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/test.tsv"
 
 
 def get_images_path(folder: str):
@@ -29,7 +34,7 @@ def image_iter(images_path: list[str]):
         yield image, path
 
 
-def get_thresholded_coi_indices(image: np.ndarray, channel_of_interest: int, intensity_threshold: int = 1000): # NOTE: 0-based basically channel 1 is 0 and channel 2 is 1
+def get_thresholded_coi_indices(image: np.ndarray, channel_of_interest: int, intensity_threshold: int = 1000): 
     """
     TODO
     """
@@ -62,7 +67,7 @@ def normalize_by_coi_intensity(pixel_intensities: np.ndarray):
     non_coi_channels = pixel_intensities[:, 1:]
     coi_intensity = pixel_intensities[:, [0]]
     normalized_ratios = non_coi_channels / coi_intensity
-    return normalized_ratios.astype(np.float32) # May change this afterwards.
+    return normalized_ratios.astype(np.float32)
 
 
 def build_header(channel_order: list[int], channel_of_interest: int): 
@@ -94,6 +99,14 @@ def build_pixel_report_tsv(image_name: str, raw_pixel_intensities: np.ndarray, p
     return "\n".join(file_content) + "\n"
 
 
+def cluster_pixels(image: np.ndarray, intensity_threshold: int = 1000):
+    coi_image = image[0]
+    mask =  coi_image > intensity_threshold
+    labeled = measure.label(mask, connectivity=2)
+    props = measure.regionprops(labeled, intensity_image=coi_image)    
+    return props
+
+
 def main(image_folder, channel_of_interest, threshold, out_fname):
     has_header = False
 
@@ -105,8 +118,7 @@ def main(image_folder, channel_of_interest, threshold, out_fname):
         for img, img_name in tqdm(images, total=len(images_path)):
 
             threshold_indices = get_thresholded_coi_indices(img, channel_of_interest, threshold) 
-
-            if not threshold_indices: # if no pixels above threshold exist it will pass to the next iteration
+            if threshold_indices: # if no pixels above threshold exist it will pass to the next iteration
                 continue
 
             img_name = img_name.split("\\")[-1].split(".")[0] 
@@ -121,6 +133,8 @@ def main(image_folder, channel_of_interest, threshold, out_fname):
             pixel_intensities = get_channel_intensity(img_reordered, threshold_indices)
             pixel_ratios = normalize_by_coi_intensity(pixel_intensities)
 
+            pixel_clusters = cluster_pixels(img_reordered, threshold)
+
             file_content = build_pixel_report_tsv(img_name, pixel_intensities, threshold_indices, pixel_ratios)
             f.write(file_content)
 
@@ -128,3 +142,5 @@ if __name__ == "__main__":
     start_time = time.time()
     main(IMG_FOLDER, CHANNEL_OF_INTEREST, THRESHOLD, OUT_FNAME)      
     print(f"Finished in {time.time() - start_time} seconds")
+
+
