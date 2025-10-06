@@ -1,25 +1,26 @@
-# TODO: Add multiprocessing, it will make it run faster
-from multiprocessing import Pool
-
 # TODO: Add CLI, use click
 
 import time
 import glob
+import os
+from itertools import repeat
+from multiprocessing import Pool
 
 import tifffile as tiff
 import numpy as np
-from tqdm import tqdm  # NOTE: Should I keep this?
+from tqdm import tqdm
 from skimage import measure
 
 
 IMG_FOLDER = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"  # "Joao_repository/Images/Cropped_Images_test/"
-CHANNEL_OF_INTEREST = 1  # 1-based & Channel of Interest == coi
+CHANNEL_OF_INTEREST = 2  # 1-based & Channel of Interest == coi
 PIXEL_INTENSITY_THRESHOLD = 1000
 CLUSTER_SIZE_THRESHOLD = 5
 PIXEL_REPORT_OUT_FNAME = (
     "Joao_repository/Results/Pixel_Intensity_Thresholding/pixels_intensity_over1000.tsv"
 )
 CLUSTER_REPORT_OUT_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/clusters_size5plus_intensity_over1000.tsv"
+NUM_PROCESSERS = 10
 
 
 def get_images_path(folder: str):
@@ -27,15 +28,6 @@ def get_images_path(folder: str):
     TODO
     """
     return glob.glob(f"{folder}/*.tif")
-
-
-def image_iter(images_path: list[str]):
-    """
-    TODO
-    """
-    for path in images_path:
-        image = tiff.imread(path)
-        yield image, path
 
 
 def build_cluster_report_header(num_channels: int):
@@ -144,7 +136,7 @@ def normalize_by_coi_intensity(
 
 def build_pixel_report_tsv(
     image_name: str, pixel_coords, pixel_intensity, pixel_ratio
-):  # Tested was done in 33m
+): 
     """
     TODO
     """
@@ -171,6 +163,40 @@ def build_pixel_report_tsv(
     return "\n".join(file_content) + "\n"
 
 
+def analyse_clusters_and_pixels(args):
+        image_path, channel_of_interest, pixel_intensity_threshold, cluster_size_threshold = args
+        
+        img = tiff.imread(image_path)
+        img_name = image_path.split("\\")[-1].split(".")[0]
+
+        num_channels = img.shape[0]
+
+        clusters_high_intensity = find_pixel_clusters(
+            img, channel_of_interest, pixel_intensity_threshold
+        )
+        filtered_clusters_high_intensity = filter_clusters(
+            clusters_high_intensity, cluster_size_threshold
+        )
+
+        if not filtered_clusters_high_intensity:
+            return []
+
+        clusters_info = build_cluster_report(
+            img_name, img, filtered_clusters_high_intensity
+        )
+
+        pixel_coords = get_all_pixel_positions(filtered_clusters_high_intensity)
+        pixel_intensity = get_channel_intensity(img, pixel_coords)
+        pixel_ratios = normalize_by_coi_intensity(
+            pixel_intensity, num_channels, channel_of_interest
+        )
+        pixel_info = build_pixel_report_tsv(
+            img_name, pixel_coords, pixel_intensity, pixel_ratios
+        )
+
+        return clusters_info, pixel_info, num_channels
+
+
 def main(
     image_folder,
     channel_of_interest,
@@ -178,58 +204,51 @@ def main(
     cluster_size_threshold,
     pixel_report_fname,
     cluster_report_fname,
+    num_processers
 ):
     has_header = False
     channel_of_interest = channel_of_interest - 1
 
     images_path = get_images_path(image_folder)
-    images = image_iter(images_path)
+
+    if num_processers == None:
+        num_processers = 1
 
     with open(pixel_report_fname, "w") as pixel_out, open(
         cluster_report_fname, "w"
     ) as cluster_out:
+        
+        with Pool(processes=num_processers) as pool:
 
-        for img, img_name in tqdm(images, total=len(images_path)):
-
-            img_name = img_name.split("\\")[-1].split(".")[0]
-
-            if not has_header:
-                num_channels = img.shape[0]
-
-                pixel_header = build_pixel_report_header(
-                    num_channels, channel_of_interest
-                )
-                cluster_header = build_cluster_report_header(num_channels)
-
-                pixel_out.write(pixel_header)
-                cluster_out.write(cluster_header)
-
-                has_header = True
-
-            clusters_high_intensity = find_pixel_clusters(
-                img, channel_of_interest, pixel_intensity_threshold
-            )
-            filtered_clusters_high_intensity = filter_clusters(
-                clusters_high_intensity, cluster_size_threshold
+            args_iter = zip(
+                images_path,
+                repeat(channel_of_interest),
+                repeat(pixel_intensity_threshold),
+                repeat(cluster_size_threshold)
             )
 
-            if not filtered_clusters_high_intensity:
-                continue
+            for result in tqdm(pool.imap_unordered(analyse_clusters_and_pixels,
+                            args_iter), total=len(images_path)):
+                
+                if not result:
+                    continue
+                
+                clusters_info, pixels_info, num_channels = result
 
-            clusters_info = build_cluster_report(
-                img_name, img, filtered_clusters_high_intensity
-            )
-            cluster_out.write(clusters_info)
+                if not has_header:
 
-            pixel_coords = get_all_pixel_positions(filtered_clusters_high_intensity)
-            pixel_intensity = get_channel_intensity(img, pixel_coords)
-            pixel_ratios = normalize_by_coi_intensity(
-                pixel_intensity, num_channels, channel_of_interest
-            )
-            pixel_info = build_pixel_report_tsv(
-                img_name, pixel_coords, pixel_intensity, pixel_ratios
-            )
-            pixel_out.write(pixel_info)
+                    pixel_header = build_pixel_report_header(
+                        num_channels, channel_of_interest
+                    )
+                    cluster_header = build_cluster_report_header(num_channels)
+
+                    pixel_out.write(pixel_header)
+                    cluster_out.write(cluster_header)
+
+                    has_header = True
+
+                cluster_out.write(clusters_info)
+                pixel_out.write(pixels_info)
 
 
 if __name__ == "__main__":
@@ -242,6 +261,7 @@ if __name__ == "__main__":
         CLUSTER_SIZE_THRESHOLD,
         PIXEL_REPORT_OUT_FNAME,
         CLUSTER_REPORT_OUT_FNAME,
+        NUM_PROCESSERS
     )
 
     print(f"Finished in {time.time() - start_time} seconds")
