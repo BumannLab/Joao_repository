@@ -2,7 +2,6 @@
 
 import time
 import glob
-import os
 from itertools import repeat
 from multiprocessing import Pool
 
@@ -34,7 +33,7 @@ def build_cluster_report_header(num_channels: int):
     """
     TODO
     """
-    ch_cols = [f"Channel_{i+1}_Summed_Intensitnsity" for i in range(num_channels)]
+    ch_cols = [f"Channel_{i+1}_Summed_Intensity" for i in range(num_channels)]
     return "Image\tArea\tX_position\tY_position\t" + "\t".join(ch_cols) + "\n"
 
 
