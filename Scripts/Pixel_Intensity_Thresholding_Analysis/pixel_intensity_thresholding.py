@@ -95,7 +95,7 @@ def build_cluster_report(image_name, image, cluster_report):
     for i in range(len(cluster_report)):
         summed_intensities = get_summed_intensities(image, cluster_report[i].coords)
 
-        x, y = cluster_report[i].centroid
+        y, x = cluster_report[i].centroid
 
         row = [
             image_name,
