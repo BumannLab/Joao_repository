@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 
 
 IN_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/pixels_intensity_over1000.tsv"
-OUT_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/Images/Ratios_distribution_histogram_test_hist_with_line.pdf"
-BINS = 50
+OUT_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/Images/.pdf"
+BINS = 500
 COLUMN_OF_INTEREST = "Channel_2"
 CHANNEL_MAP={
     "Channel_1":"AL-555",
@@ -47,77 +47,69 @@ def combine_cols_to_plot(columns_to_plot, column_of_interest):
 
 def rename_columns(old_key, old_new_keys):
     new_key = []
-    for channel in old_key.split("_"):    
+    for channel in old_key.split("-"):    
         new_key.append(old_new_keys[channel])
     return "/".join(new_key)
 
 
-def plot_histogram(out_fname, counts, columns_to_plot, centers, channel_map):
-    plt.figure(figsize=(12, 8))
+def plot_histogram(out_fname, counts, columns_combn, xedges, yedges, channel_map):
+    cmap = plt.cm.magma.copy()
+    cmap.set_under("lightgray")
+    
+    for combn in columns_combn:        
+        col1, col2 = combn
 
-    colors = plt.cm.tab10(np.linspace(0, 1, len(columns_to_plot)))
+        col1 = rename_columns(col1, channel_map)
+        col2 = rename_columns(col2, channel_map)
 
-    for c, color in zip(columns_to_plot, colors):        
-        
-        plt.fill_between(centers, counts[c], step="mid", alpha=0.3, color=color)
-        plt.step(centers, counts[c], where="mid", color=color, linewidth=2, label=rename_columns(c, channel_map))
-
-        #or this, but use edges not centers ()
-        # plt.hist(edges[:-1], edges, weights=counts[c], label=rename_columns(c, channel_map), density=True, color=color, alpha = 0.7, edgecolor="black", linewidth=0.7)
-
-
-    plt.xlabel("Ratio", fontsize=12)
-    plt.ylabel("Count", fontsize=12)
-    plt.legend(frameon=False)
-    plt.grid(alpha=0.2, linestyle="--")
-    plt.tight_layout()
-    plt.show()
-    plt.savefig(out_fname, dpi=300, bbox_inches="tight")
+        plt.figure(figsize=(12, 8))
+        plt.imshow(counts["-".join(combn)], cmap=cmap, vmin=1, interpolation='nearest', origin='lower',
+                extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]]
+                )
+        plt.tight_layout()
+        plt.xlabel(col1, fontsize=12)
+        plt.ylabel(col2, fontsize=12)
+        plt.colorbar(label="count")
+        plt.grid(alpha=0.2, linestyle="--")
+        plt.savefig(f"{col1}_vs_{col2}_scatter2d.pdf", dpi=300, bbox_inches="tight")
 
 
 def main(input_file, out_file, bins, channel_map, column_of_interest):
-    chunk_size = 50_000
+    chunk_size = 50_000_000
 
     header = get_header(input_file)
     columns_to_plot = get_columns_to_plot(header)
+
     cols_combn = combine_cols_to_plot(columns_to_plot, column_of_interest)
 
     xedges, yedges, centers, widths = obtain_bin_info(bins)
 
     chunked_df = pd.read_csv(input_file, sep="\t", usecols=columns_to_plot, dtype="float32",
-                        chunksize=chunk_size, nrows = chunk_size)
+                        chunksize=chunk_size)
 
-    counts = {"_".join(combn): np.zeros((bins, bins), dtype=np.int32) for combn in cols_combn}
+    counts = {"-".join(combn): np.zeros((bins, bins), dtype=np.int32) for combn in cols_combn}
    
     for chunk in chunked_df:
-        print(chunk)
         for col1, col2 in cols_combn:
             column1 = chunk[col1].to_numpy(copy=False)
             column2 = chunk[col2].to_numpy(copy=False)
             bin_distribution, _, _ = np.histogram2d(column1, column2, bins=(xedges, yedges))
             counts[f"{col1}_{col2}"] = bin_distribution.T
 
-    fig = plt.figure(figsize=(7, 3))
+    # cmap = plt.cm.magma.copy()
+    # cmap.set_under("lightgray")
+    # plt.figure(figsize=(12, 8))
+    # plt.imshow(counts["Channel_2_Channel_3"], cmap=cmap, vmin=1, interpolation='nearest', origin='lower',
+    #         extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]]
+    #         )
+    # plt.xlabel("SYBR_GOLD", fontsize=12)
+    # plt.ylabel("DAPI", fontsize=12)
+    # plt.colorbar(label="count")
+    # plt.grid(alpha=0.2, linestyle="--")
+    # plt.show()
+    # plt.savefig(pos, "Channel_2_Channel_1.pdf", dpi=300, bbox_inches="tight")
 
-    ax = fig.add_subplot(131, title='imshow: square bins')
-
-    plt.imshow(counts["Channel_2_Channel_1"], interpolation='nearest', origin='lower',
-            extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
-    
-    ax = fig.add_subplot(132, title='pcolormesh: actual edges',
-
-        aspect='equal')
-
-    X, Y = np.meshgrid(xedges, yedges)
-
-    ax.pcolormesh(X, Y, counts["Channel_2_Channel_1"])
-
-
-    
-    plt.show()
-
-    return
-    plot_histogram(out_file, counts, columns_to_plot, centers, channel_map)
+    plot_histogram(out_file, counts, cols_combn, xedges, yedges, channel_map)
 
 
 if __name__ == "__main__":
