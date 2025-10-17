@@ -4,43 +4,69 @@ import time
 import glob
 from itertools import repeat
 from multiprocessing import Pool
+from pathlib import Path
 
 import tifffile as tiff
 import numpy as np
 from tqdm import tqdm
 from skimage import measure
+import skimage
 
 
-IMG_FOLDER = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"  # "Joao_repository/Images/Cropped_Images_test/"
+IMAGE_DIR = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
 CHANNEL_OF_INTEREST = 2  # 1-based & Channel of Interest == coi
 PIXEL_INTENSITY_THRESHOLD = 1000
 CLUSTER_SIZE_THRESHOLD = 5
-PIXEL_REPORT_OUT_FNAME = (
-    "Joao_repository/Results/Pixel_Intensity_Thresholding/pixels_intensity_over1000.tsv"
-)
-CLUSTER_REPORT_OUT_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/clusters_size5plus_intensity_over1000.tsv"
-NUM_PROCESSERS = 10
+ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX"
+NUM_PROCESSORS = 10
 
 
 def get_images_path(folder: str):
     """
-    TODO
+    Input:
+        - folder: The path to the folder containing the microscopic tif images
+
+    Output:
+        - A list of absolute paths to all files in the folder that match the `.tif` extension.
+
+    Method:
+        - Uses the glob module to find all files in the folder that end with '.tif'.
     """
+
     return glob.glob(f"{folder}/*.tif")
 
 
 def build_cluster_report_header(num_channels: int):
     """
-    TODO
+    Input:
+        - num_channels: Number of channels present in all images.
+
+    Output:
+        - A tab-separated string representing the header row to be written into the cluster report file.
+
+    Method:
+        - Constructs a list of channel-specific column names (e.g., Channel_1_Summed_Intensity, ...)
+        and combines them with fixed metadata columns (Image, Area, X_position, Y_position).
     """
+
     ch_cols = [f"Channel_{i+1}_Summed_Intensity" for i in range(num_channels)]
     return "Image\tArea\tX_position\tY_position\t" + "\t".join(ch_cols) + "\n"
 
 
 def build_pixel_report_header(num_channels: int, channel_of_interest: int):
     """
-    TODO
+    Input:
+        - num_channels: Number of channels present in all images.
+        - channel_of_interest: Channel of interest to produce the ratios.
+
+    Output:
+        - A tab-separated string representing the header row to be written into the pixel report file.
+
+    Method:
+        - Constructs two lists of channel-specific column names: (e.g., Channel_1, ...) and (e.g., Channel_1/Channel_of_interest)
+        and combines them with fixed metadata columns (Image, X_position, Y_position).
     """
+
     ch_cols = [f"Channel_{i+1}" for i in range(num_channels)]
     ratio_cols = [
         f"Channel_{i+1}/Channel_{channel_of_interest+1}"
@@ -54,8 +80,23 @@ def find_pixel_clusters(
     image: np.ndarray, channel_of_interest: int, intensity_threshold: int = 1000
 ):
     """
-    TODO
+    Input:
+        - image: Image with the intensity values in each pixel for all channels.
+        - channel_of_interest: Channel of interest to threshold the pixels.
+        - intensity_threshold: Threshold to extract the pixels that are above it.
+
+    Output:
+        - cluster_properties: Contains clusters of pixels that are above or equal to the threshold
+        in the channel of interest of the image
+
+
+    Method:
+        - Extracts information from the image relative to the channel of interest, applies the threshold to the image
+        where each pixel will be labeled as true if it meets the condition (>=threshold) and false otherwise. Then it
+        produces a label for each pixel that belongs to the same cluster and then extracts all the information from the image, 
+        such as area, centroid x and y positions.
     """
+
     coi_image = image[channel_of_interest]
     mask = coi_image >= intensity_threshold
     labeled = measure.label(mask, connectivity=2)
@@ -63,17 +104,26 @@ def find_pixel_clusters(
     return clusters_properties
 
 
-def filter_clusters(all_clusters, cluster_size: int):
+def filter_clusters(all_clusters, cluster_size_threshold: int):
+    """
+    Input:
+        - all_clusters: Contains information for all clusters that have a pixel intensity above or equal than the threshold
+        - cluster_size_threshold: The threshold to extract all clusters that are above it.
+    Output: 
+        - filtered_clusters: List with all the information about cluster with sie greater than threshold
+
+    Method:
+        - Extracts clusters that have an area/size greater than the threshold
+    """
+
     filtered_clusters = [
-        cluster for cluster in all_clusters if cluster.area > cluster_size
+        cluster for cluster in all_clusters if cluster.area > cluster_size_threshold
     ]
     return filtered_clusters
 
 
 def get_channel_intensity(image: np.ndarray, pixel_coords):
-    """
-    TODO
-    """
+
     x_indices = pixel_coords[:, 0]
     y_indices = pixel_coords[:, 1]
 
@@ -197,21 +247,24 @@ def analyse_clusters_and_pixels(args):
 
 
 def main(
-    image_folder,
+    image_dir,
     channel_of_interest,
     pixel_intensity_threshold,
     cluster_size_threshold,
-    pixel_report_fname,
-    cluster_report_fname,
-    num_processers
+    odirname,
+    num_processers: int = 1
 ):
+
+    odirname = Path(odirname)
+    odirname.mkdir(parents=True, exist_ok=True)
+
     has_header = False
     channel_of_interest = channel_of_interest - 1
 
-    images_path = get_images_path(image_folder)
+    images_path = get_images_path(image_dir)
 
-    if num_processers == None:
-        num_processers = 1
+    pixel_report_fname = f"{odirname}/pixels_intensity_over{pixel_intensity_threshold}.tsv"
+    cluster_report_fname = f"{odirname}/clusters_size{cluster_size_threshold}plus_intensity_over{pixel_intensity_threshold}.tsv"
 
     with open(pixel_report_fname, "w") as pixel_out, open(
         cluster_report_fname, "w"
@@ -254,13 +307,12 @@ if __name__ == "__main__":
     start_time = time.time()
 
     main(
-        IMG_FOLDER,
+        IMAGE_DIR,
         CHANNEL_OF_INTEREST,
         PIXEL_INTENSITY_THRESHOLD,
         CLUSTER_SIZE_THRESHOLD,
-        PIXEL_REPORT_OUT_FNAME,
-        CLUSTER_REPORT_OUT_FNAME,
-        NUM_PROCESSERS
+        ODIRNAME,
+        NUM_PROCESSORS
     )
 
     print(f"Finished in {time.time() - start_time} seconds")
