@@ -10,7 +10,6 @@ import tifffile as tiff
 import numpy as np
 from tqdm import tqdm
 from skimage import measure
-import skimage
 
 
 IMAGE_DIR = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
