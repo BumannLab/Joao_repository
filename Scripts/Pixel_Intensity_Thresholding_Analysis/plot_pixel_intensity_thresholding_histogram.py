@@ -40,14 +40,6 @@ def obtain_bin_info(num_bins):
     return edges, centers, widths
 
 
-def combine_counts(counts, bins, columns_to_plot):
-    final_counts = {c: np.zeros(bins, dtype=np.int64) for c in columns_to_plot}
-    for count in counts:
-        for col in columns_to_plot:
-            final_counts[col] += count[col]
-    return final_counts
-
-
 def rename_columns(old_key, old_new_keys):
     new_key = []
     for channel in old_key.split("/"):

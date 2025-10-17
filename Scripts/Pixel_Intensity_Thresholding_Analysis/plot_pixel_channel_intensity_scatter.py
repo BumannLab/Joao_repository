@@ -114,7 +114,7 @@ def main(input_file, odirname, bins, channel_map, column_of_interest):
     xedges, yedges = obtain_bin_info(bins)
 
     chunked_df = pd.read_csv(input_file, sep="\t", usecols=columns_to_plot, dtype="float32",
-                        chunksize=chunk_size#, nrows=chunk_size
+                        chunksize=chunk_size #, nrows=chunk_size
                         )
 
     counts = {"+".join(combn): np.zeros((bins, bins), dtype=np.int32) for combn in cols_combn}
