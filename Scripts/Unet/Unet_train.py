@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+from Unet import Unet
+
 # TODO: implement class dataset method: Done
 # TODO: Find a way to get the number of channels # how can we know the channel
 # size in advance ? Should we load the first image and get the shape? Or use empty lists and then convert them to numpy arrays
@@ -14,6 +16,10 @@ from torch.utils.data import Dataset, DataLoader
 
 IMG_DIR = "Joao_repository/Images/Cropped_Images_test"
 MASK_IMG_DIR = "Joao_repository/Images/Masked_Images_test"
+BATCH_SIZE = 0
+LEARNING_RATE = 0
+NUM_EPOCHS = 0
+
 
 class BacteriaMaskPair(Dataset):
     def __init__(self, input_images: np.ndarray, label_images: np.ndarray, transform=None):
@@ -61,10 +67,11 @@ def merge_mask_label_images(folder: Path, class_to_override_overlap: int = 1):
     num_classes = len(mask_folders)
 
     mask_folder_images_path = [0] * num_classes # TODO: should i create empty lists and then convert to numpy array or read the first image to obtain the size in a function for example
+
     for class_num in range(num_classes):
         images = load_images(mask_folders[class_num])
         mask_folder_images_path[class_num] = images
-    print(mask_folder_images_path)
+    
     masked_images = np.stack(np.array(mask_folder_images_path))  # TODO: should i create empty lists and then convert to numpy array or read the first image to obtain the size in a function for example
 
     for i in range(num_classes):
@@ -84,7 +91,13 @@ def main():
 
     bacteria_dataset = BacteriaMaskPair(input_images, label_images)
 
-    dataloader = DataLoader(bacteria_dataset, batch_size=2, shuffle=True)
+    train, test = torch.utils.data.random_split(bacteria_dataset, [0.5, 0.5]) # this is just to practice on the small images, change the ratios to 80, 20 after
+
+    dataloader = DataLoader(bacteria_dataset, batch_size=64, shuffle=True)
+
+    unet_model = Unet(input_images) # Get shape and number of classes when getting the arrays return these variables ig
+
+    optimizer = torch.optim.Adam()  # TODO: add parameters
 
     for batch_images, batch_labels in dataloader:
         print(batch_images)
