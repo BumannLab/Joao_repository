@@ -68,6 +68,8 @@ plot_scatter <- function(dataframe, cols_combinations_to_plot, channel_map, odir
                                    y = .data[[col2]])) +
       geom_point(size = 1) +
       theme_minimal() +
+      scale_y_log10() +
+      scale_x_log10() +
       xlab(rename_channel(col1, channel_map)) +
       ylab(rename_channel(col2, channel_map))
     
@@ -90,7 +92,7 @@ main <- function(tsv_name, channel_of_interest, channel_map, odirname){
   plot_scatter(cluster_df, combn_cols, channel_map, odirname)
 }
 
-tsv_name <- 'Joao_repository/Results/Pixel_Intensity_Thresholding/clusters_size5plus_intensity_over1000.tsv'
+tsv_name <- 'Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX/clusters_size5plus_intensity_over1000.tsv'
 channel_of_interest <- 2
 channel_map <- data.frame(
   Channel_1 = "AL-555",
@@ -99,8 +101,7 @@ channel_map <- data.frame(
   Channel_4 = "AL-647",
   stringsAsFactors = FALSE
 )
-odirname <- 'Joao_repository/Results/Pixel_Intensity_Thresholding/Images'
-
+odirname <- 'Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX/Images'
 
 main(tsv_name, channel_of_interest, channel_map, odirname)
 
