@@ -4,3 +4,5 @@ notes.txt
 Data/
 mTB_gallery.pptx
 /Scripts/Unet/__pycache__
+global_vars.md
+*.pyc
