@@ -5,7 +5,8 @@ from Pixel_Intensity_Thresholding_Analysis.pixel_intensity_thresholding import (
     filter_clusters, 
     get_channel_intensity, 
     get_summed_intensities,
-    get_all_pixel_positions)
+    get_all_pixel_positions,
+    normalize_by_coi_intensity)
 
 
 class TestFindPixelClusters:
@@ -89,19 +90,37 @@ def test_get_summed_intensities(image, pixel_coords):
 
     result = get_summed_intensities(image, pixel_coords)
     
-    assert (result==expected_result).all()
+    assert (result == expected_result).all()
 
 
 def test_get_all_pixel_positions(all_clusters):
-    expected_result = np.array([[[0,0]],
-                               [[0,2],[0,3],[1,2],[2,1]],
-                               [[3,5]],
-                                [[5,3]]])
-
+    expected_result = np.array([[2,2],
+                                [3,4],
+                                [4,4]])
+    
+    
     result = get_all_pixel_positions(all_clusters[1])
 
     assert (result==expected_result).all()
+
+
+def test_normalize_by_coi_intensity():
+    pixel_intensities = np.array([[3, 14, 1, 17],
+                                [17, 12, 5, 2],
+                                [9, 14, 17, 5],
+                                [4, 8, 19, 13]])  
+    num_channels = 4
+    channel_of_interest = 2
+
+    expected_result = np.array([[3.0, 14.0, 17.0],
+                                [3.4, 2.4, 0.4],
+                                [0.5294118, 0.8235294, 0.29411766],
+                                [0.21052632, 0.42105263, 0.68421054]], dtype=np.float32)
     
+    result = normalize_by_coi_intensity(pixel_intensities, num_channels, channel_of_interest)
+
+    assert (result == expected_result).all()
+
     
 @pytest.fixture
 def image():
@@ -111,7 +130,7 @@ def image():
 @pytest.fixture
 def all_clusters(image):
     all_clusters = [find_pixel_clusters(image, 3, 15),
-                    find_pixel_clusters(image, 0, 15)]
+                    find_pixel_clusters(image, 0, 17)]
     return all_clusters
 
 @pytest.fixture
