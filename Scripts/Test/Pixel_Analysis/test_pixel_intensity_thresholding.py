@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from Pixel_Intensity_Thresholding_Analysis.pixel_intensity_thresholding import (find_pixel_clusters, 
+from Pixel_Analysis.pixel_intensity_thresholding import (find_pixel_clusters, 
     filter_clusters, 
     get_channel_intensity, 
     get_summed_intensities,
