@@ -76,8 +76,8 @@ def multi_channel_threshold_mask(image, thresholds):
         channel_mask = voxel_channel_intensity_threshold(
             image,
             channel,
-            threshold,
-            operator
+            operator,
+            threshold 
         )
 
         image_masks.append(channel_mask)
