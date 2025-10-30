@@ -10,20 +10,19 @@ import tifffile as tiff
 import numpy as np
 from tqdm import tqdm
 from skimage import measure
-import skimage
 
 
-IMAGE_DIR = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
-CHANNEL_OF_INTEREST = 2  # 1-based & Channel of Interest == coi
+IMAGE_DIR = "M:/mTB Data/LAM1AL647_CD68AL555_SYBRGold_DAPI/MAX"
+CHANNEL_OF_INTEREST = 1  # 1-based & Channel of Interest == coi
 PIXEL_INTENSITY_THRESHOLD = 1000
 CLUSTER_SIZE_THRESHOLD = 5
-ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX"
+ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/LAM1AL647_CD68AL555_SYBRGold_DAPI_MAX"
 NUM_PROCESSORS = 10
 
 
 def get_images_path(folder: str):
     """
-    Input:
+     Input:
         - folder: The path to the folder containing the microscopic tif images
 
     Output:
@@ -71,7 +70,7 @@ def build_pixel_report_header(num_channels: int, channel_of_interest: int):
     ratio_cols = [
         f"Channel_{i+1}/Channel_{channel_of_interest+1}"
         for i in range(num_channels)
-        if i != channel_of_interest
+            if i != channel_of_interest
     ]
     return "Image\tX_position\tY_position\t" + "\t".join(ch_cols + ratio_cols) + "\n"
 
@@ -123,6 +122,17 @@ def filter_clusters(all_clusters, cluster_size_threshold: int):
 
 
 def get_channel_intensity(image: np.ndarray, pixel_coords):
+    """
+    Input:
+        - image:  Image with the intensity values in each pixel for all channels.
+        - pixel_coords: x and y coordinates of the pixels that passed the threshold
+    Output: 
+        - pixel_intensities: List with all the intensities for all channels for all pixels coordinates given
+
+    Method:
+        - Extracts all the x and y position indexes and then slices the image (which is a list) retrieving only the coordinates given
+        and then transposes the matrix for a more accessible list format to work with
+    """
 
     x_indices = pixel_coords[:, 0]
     y_indices = pixel_coords[:, 1]

@@ -7,16 +7,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-IN_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX/pixels_intensity_over1000.tsv"
-ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX/Images/"
+IN_FNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/LAM1AL647_CD68AL555_SYBRGold_DAPI_MAX/pixels_intensity_over1000.tsv"
+ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/LAM1AL647_CD68AL555_SYBRGold_DAPI_MAX/Images"
 BINS = 655
-COLUMN_OF_INTEREST = "Channel_2"
-CHANNEL_MAP={
-    "Channel_1":"AL-555",
-    "Channel_2":"SYBR_GOLD",
-    "Channel_3":"DAPI",
-    "Channel_4":"AL-647",
+COLUMN_OF_INTEREST = "Channel_1"
+CHANNEL_MAP = {
+    "Channel_1": "SYBR_GOLD",
+    "Channel_2": "AL-555",
+    "Channel_3": "LAM",
+    "Channel_4": "DAPI",
 }
+
+IN_FNAME = (
+    "Joao_repository/Results/Pixel_Intensity_Thresholding/LAM1AL647_CD68AL555_SYBRGold_DAPI_MAX/pixels_intensity_over1000.tsv"
+)
+ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/LAM1AL647_CD68AL555_SYBRGold_DAPI_MAX/Images"
+BINS = 100
+
 
 
 def get_header(file: Path):
@@ -57,17 +64,10 @@ def find_max_x_y_edge(counts):
     cols_with_data = np.where(mask.any(axis=0))[0]
     rows_with_data = np.where(mask.any(axis=1))[0]
 
-    x_edge = cols_with_data.max()
-    y_edge = rows_with_data.max()
-
-    if not counts.shape[0] - 2 > y_edge > counts.shape[0]:
-        y_edge += 1
-
-    if not counts.shape[1] - 2 > x_edge > counts.shape[1]:
-        x_edge += 1
+    x_edge = cols_with_data.max() + 1
+    y_edge = rows_with_data.max() + 1
     
     return x_edge, y_edge
-
 
 def plot_scatters(odirname, counts, columns_combn, xedges, yedges, channel_map):
 
