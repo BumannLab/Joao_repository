@@ -5,37 +5,29 @@ import glob
 from itertools import repeat
 from multiprocessing import Pool
 from pathlib import Path
+import re
+from math import ceil
 
 import tifffile as tiff
 import numpy as np
 from tqdm import tqdm
 from skimage import measure
 
+from compute_overlap_cut_direction import get_all_tiles_directions_to_remove_overlap
+from utils import get_images_path
 
-IMAGE_DIR = "M:/mTB Data/LAM1AL647_CD68AL555_SYBRGold_DAPI/MAX"
-CHANNEL_OF_INTEREST = 1  # 1-based & Channel of Interest == coi
+
+IMAGE_DIR = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
+CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
+CHANNEL_OF_INTEREST = "SYBRGold"  # Channel of Interest == coi
 PIXEL_INTENSITY_THRESHOLD = 1000
 CLUSTER_SIZE_THRESHOLD = 5
-ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/LAM1AL647_CD68AL555_SYBRGold_DAPI_MAX"
+OVERLAP = 5
+ODIRNAME = "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis"
 NUM_PROCESSORS = 10
 
 
-def get_images_path(folder: str):
-    """
-     Input:
-        - folder: The path to the folder containing the microscopic tif images
-
-    Output:
-        - A list of absolute paths to all files in the folder that match the `.tif` extension.
-
-    Method:
-        - Uses the glob module to find all files in the folder that end with '.tif'.
-    """
-
-    return glob.glob(f"{folder}/*.tif")
-
-
-def build_cluster_report_header(num_channels: int):
+def build_cluster_report_header(channel_markers: list[str]):
     """
     Input:
         - num_channels: Number of channels present in all images.
@@ -47,12 +39,11 @@ def build_cluster_report_header(num_channels: int):
         - Constructs a list of channel-specific column names (e.g., Channel_1_Summed_Intensity, ...)
         and combines them with fixed metadata columns (Image, Area, X_position, Y_position).
     """
-
-    ch_cols = [f"Channel_{i+1}_Summed_Intensity" for i in range(num_channels)]
+    ch_cols = [f"{channel_name}_Summed_Intensity" for channel_name in channel_markers]
     return "Image\tArea\tX_position\tY_position\t" + "\t".join(ch_cols) + "\n"
 
 
-def build_pixel_report_header(num_channels: int, channel_of_interest: int):
+def build_pixel_report_header(channel_markers: list[str], channel_of_interest: str):
     """
     Input:
         - num_channels: Number of channels present in all images.
@@ -65,14 +56,39 @@ def build_pixel_report_header(num_channels: int, channel_of_interest: int):
         - Constructs two lists of channel-specific column names: (e.g., Channel_1, ...) and (e.g., Channel_1/Channel_of_interest)
         and combines them with fixed metadata columns (Image, X_position, Y_position).
     """
-
-    ch_cols = [f"Channel_{i+1}" for i in range(num_channels)]
+    
+    ch_cols = [f"{marker}_Intensity" for marker in channel_markers]
+    
     ratio_cols = [
-        f"Channel_{i+1}/Channel_{channel_of_interest+1}"
-        for i in range(num_channels)
-            if i != channel_of_interest
+        f"{marker}_Intenstity/{channel_of_interest}_Intensity"
+        for marker in channel_markers
+            if marker != channel_of_interest
     ]
+
     return "Image\tX_position\tY_position\t" + "\t".join(ch_cols + ratio_cols) + "\n"
+
+
+def compute_overlap_pixels(overlap, image_shape):
+    _, height, width = image_shape
+
+    pixels_to_remove_h = ceil(height * (overlap / 100))
+    pixels_to_remove_w = ceil(width  * (overlap / 100))
+
+    return pixels_to_remove_h, pixels_to_remove_w
+
+
+def cut_overlap(image, pixels_to_remove_h, pixels_to_remove_w, directions_to_cut):
+
+    for direction in directions_to_cut:
+
+        if direction == "top":
+            image = image[:, pixels_to_remove_h:, :]
+        elif direction == "left":
+            image = image[:, :, pixels_to_remove_w:]
+        elif direction == "right":
+            image = image[:, :, :-pixels_to_remove_w]
+
+    return image
 
 
 def find_pixel_clusters(
@@ -149,13 +165,34 @@ def get_summed_intensities(image, cluster_coords):
     return sum_intensities.astype(str)
 
 
-def build_cluster_report(image_name, image, cluster_report):
+def correct_cluster_positions(filtered_clusters, pixels_to_remove_w, pixels_to_remove_h, directions):
+    corrected_cluster_positions = list()
+
+    for cluster in filtered_clusters: 
+
+        y, x = cluster.centroid
+        
+        for direction in directions:            
+
+            if direction == "top":
+                y += pixels_to_remove_h
+            elif direction == "right":
+                pass
+            elif direction == "left":
+                x += pixels_to_remove_w
+        
+        corrected_cluster_positions.append((y, x))
+
+    return corrected_cluster_positions
+
+
+def build_cluster_report(image_name, image, cluster_report, corrected_centroid_positios):
     file_content = [0] * len(cluster_report)
 
     for i in range(len(cluster_report)):
         summed_intensities = get_summed_intensities(image, cluster_report[i].coords)
 
-        y, x = cluster_report[i].centroid
+        y, x = corrected_centroid_positios[i]
 
         row = [
             image_name,
@@ -172,6 +209,19 @@ def build_cluster_report(image_name, image, cluster_report):
 
 def get_all_pixel_positions(pixel_clusters):
     pixel_coords = np.vstack([cluster.coords for cluster in pixel_clusters])
+    return pixel_coords
+
+
+def correct_pixel_positions(pixel_coords, pixels_to_remove_w, pixels_to_remove_h, directions):
+
+    for direction in directions:
+        if direction == "top":
+            pixel_coords[:, 0] += pixels_to_remove_h
+        elif direction == "right":
+            pass
+        elif direction == "left":
+            pixel_coords[:, 1] += pixels_to_remove_w
+
     return pixel_coords
 
 
@@ -223,12 +273,15 @@ def build_pixel_report_tsv(
 
 
 def analyse_clusters_and_pixels(args):
-        image_path, channel_of_interest, pixel_intensity_threshold, cluster_size_threshold = args
+        image_path, num_channels, channel_of_interest, pixel_intensity_threshold, cluster_size_threshold, overlap, directions = args
         
         img = tiff.imread(image_path)
-        img_name = image_path.split("\\")[-1].split(".")[0]
 
-        num_channels = img.shape[0]
+        pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(overlap, img.shape)
+
+        img = cut_overlap(img, pixels_to_remove_h, pixels_to_remove_w, directions)
+
+        img_name = image_path.split("\\")[-1].split(".")[0]
 
         clusters_high_intensity = find_pixel_clusters(
             img, channel_of_interest, pixel_intensity_threshold
@@ -238,29 +291,37 @@ def analyse_clusters_and_pixels(args):
         )
 
         if not filtered_clusters_high_intensity:
-            return []
+                return []
+        
+        corrected_cluster_positions = correct_cluster_positions(filtered_clusters_high_intensity, pixels_to_remove_w, pixels_to_remove_h, directions)
 
         clusters_info = build_cluster_report(
-            img_name, img, filtered_clusters_high_intensity
+            img_name, img, filtered_clusters_high_intensity, corrected_cluster_positions
         )
 
         pixel_coords = get_all_pixel_positions(filtered_clusters_high_intensity)
+
         pixel_intensity = get_channel_intensity(img, pixel_coords)
         pixel_ratios = normalize_by_coi_intensity(
             pixel_intensity, num_channels, channel_of_interest
         )
+
+        corrected_pixel_coords = correct_pixel_positions(pixel_coords, pixels_to_remove_w, pixels_to_remove_h, directions)
+        
         pixel_info = build_pixel_report_tsv(
-            img_name, pixel_coords, pixel_intensity, pixel_ratios
+            img_name, corrected_pixel_coords, pixel_intensity, pixel_ratios
         )
 
-        return clusters_info, pixel_info, num_channels
+        return clusters_info, pixel_info
 
 
 def main(
     image_dir,
+    channel_markers,
     channel_of_interest,
     pixel_intensity_threshold,
     cluster_size_threshold,
+    overlap,
     odirname,
     num_processers: int = 1
 ):
@@ -268,10 +329,14 @@ def main(
     odirname = Path(odirname)
     odirname.mkdir(parents=True, exist_ok=True)
 
-    has_header = False
-    channel_of_interest = channel_of_interest - 1
+    channel_markers = channel_markers.split(",")
+    channel_of_interest_idx = channel_markers.index(channel_of_interest)
 
-    images_path = get_images_path(image_dir)
+    num_channels = len(channel_markers)
+
+    images_path = get_images_path(image_dir, ".tif", ".tiff")
+
+    all_directions_remove_overlap = get_all_tiles_directions_to_remove_overlap(images_path)
 
     pixel_report_fname = f"{odirname}/pixels_intensity_over{pixel_intensity_threshold}.tsv"
     cluster_report_fname = f"{odirname}/clusters_size{cluster_size_threshold}plus_intensity_over{pixel_intensity_threshold}.tsv"
@@ -280,34 +345,33 @@ def main(
         cluster_report_fname, "w"
     ) as cluster_out:
         
+        pixel_header = build_pixel_report_header(
+            channel_markers, channel_of_interest
+        )
+        cluster_header = build_cluster_report_header(channel_markers)
+
+        pixel_out.write(pixel_header)
+        cluster_out.write(cluster_header)
+        
         with Pool(processes=num_processers) as pool:
 
             args_iter = zip(
                 images_path,
-                repeat(channel_of_interest),
+                repeat(num_channels),
+                repeat(channel_of_interest_idx),
                 repeat(pixel_intensity_threshold),
-                repeat(cluster_size_threshold)
+                repeat(cluster_size_threshold),
+                repeat(overlap),
+                all_directions_remove_overlap
             )
 
-            for result in tqdm(pool.imap_unordered(analyse_clusters_and_pixels,
+            for result in tqdm(pool.imap(analyse_clusters_and_pixels,
                             args_iter), total=len(images_path)):
                 
                 if not result:
                     continue
                 
-                clusters_info, pixels_info, num_channels = result
-
-                if not has_header:
-
-                    pixel_header = build_pixel_report_header(
-                        num_channels, channel_of_interest
-                    )
-                    cluster_header = build_cluster_report_header(num_channels)
-
-                    pixel_out.write(pixel_header)
-                    cluster_out.write(cluster_header)
-
-                    has_header = True
+                clusters_info, pixels_info = result
 
                 cluster_out.write(clusters_info)
                 pixel_out.write(pixels_info)
@@ -318,9 +382,11 @@ if __name__ == "__main__":
 
     main(
         IMAGE_DIR,
+        CHANNEL_MARKERS,
         CHANNEL_OF_INTEREST,
         PIXEL_INTENSITY_THRESHOLD,
         CLUSTER_SIZE_THRESHOLD,
+        OVERLAP,
         ODIRNAME,
         NUM_PROCESSORS
     )
