@@ -1,25 +1,24 @@
-import glob
 from itertools import repeat
 from multiprocessing import Pool
 from pathlib import Path
-import re
 
 import nd2
 import numpy as np
 from tqdm import tqdm
 from skimage.measure import label, regionprops
 
+from utils import slice_channel_threshold, get_images_path
+from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove_overlap, compute_overlap_pixels, cut_overlap
+
 
 Z_STACK_IMAGE_DIR = "M:/mTB Data/4CHANNELsTAINING_JoaoSamples" # "Joao_repository/Data/img_mTB_zstack_voxel_analysis"
-ODIRNAME = "Joao_repository/Results/Voxel_Analysis/"
+ODIRNAME = "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Voxel_Analysis/"
+IMAGE_OVERLAP = 5
+
 CHANNEL_THRESHOLD_CONDITIONS = "2>=1000,3<=250"
 CLUSTER_SIZE_THRESHOLD = 5
+
 NUM_PROCESSERS = 10
-
-
-def get_images_path(image_dir):
-    images_path = glob.glob(f"{image_dir}/*.nd2")
-    return sorted(images_path)
 
 
 def build_out_file_sufix(threshold_conditions):
@@ -36,20 +35,6 @@ def build_out_file_sufix(threshold_conditions):
     threshold_conditions = "channel" + threshold_conditions.replace(",", "_channel")
 
     return threshold_conditions
-
-
-def slice_channel_threshold(threshold_conditions):
-
-    channel_threshold_conditions = []
-    
-    for channel_threshold in threshold_conditions.split(","):
-
-        try: channel, operator, threshold = re.split(r'(<=|>=|<|>)', channel_threshold)
-        except: raise ValueError(f"The operator in \"{channel_threshold}\" is not valid.")
-        
-        channel_threshold_conditions.append((int(channel) - 1, operator, int(threshold))) # channel will go from 1- to 0-based
-
-    return channel_threshold_conditions
 
 
 def voxel_channel_intensity_threshold(image, channel, operator, threshold):
@@ -102,7 +87,28 @@ def filter_size_clusters(all_clusters_props, cluster_size_threshold: int = 5):
     return filtered_clusters
 
 
-def build_file_report(image_name, filtered_clusters_props):
+def correct_cluster_positions(filtered_clusters, pixels_to_remove_w, pixels_to_remove_h, directions):
+    corrected_cluster_positions = list()
+
+    for cluster in filtered_clusters: 
+
+        _, y, x = cluster.centroid
+        
+        for direction in directions:            
+
+            if direction == "top":
+                y += pixels_to_remove_h
+            elif direction == "right":
+                pass
+            elif direction == "left":
+                x += pixels_to_remove_w
+        
+        corrected_cluster_positions.append((y, x))
+
+    return corrected_cluster_positions
+
+
+def build_file_report(image_name, filtered_clusters_props, corrected_clusters_positions):
 
     num_clusters = len(filtered_clusters_props)
 
@@ -110,13 +116,15 @@ def build_file_report(image_name, filtered_clusters_props):
 
     for idx in range(num_clusters):
 
-        z, y, x = filtered_clusters_props[idx].centroid
+        z, _, _ = filtered_clusters_props[idx].centroid
+
+        cor_y, cor_x = corrected_clusters_positions[idx]
 
         content = "\t".join([
             image_name,
             str(filtered_clusters_props[idx].area),
-            str(x), 
-            str(y),
+            str(cor_x), 
+            str(cor_y),
             str(z),
         ])
 
@@ -127,11 +135,17 @@ def build_file_report(image_name, filtered_clusters_props):
 
 def build_voxel_clusters(args):
 
-    image_path, channel_threshold_conditions, cluster_size_threshold = args
+    image_path, directions_remove_overlap, image_overlap, channel_threshold_conditions, cluster_size_threshold = args
 
     img_name = image_path.split("\\")[-1].split(".")[0]
 
     image = nd2.imread(image_path)
+
+    img_height, img_width = image.shape[-2:]
+
+    pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(image_overlap, img_height, img_width)
+
+    image = cut_overlap(image, pixels_to_remove_h, pixels_to_remove_w, directions_remove_overlap)
 
     final_thresholded_mask = multi_channel_threshold_mask(image, channel_threshold_conditions)
 
@@ -139,26 +153,30 @@ def build_voxel_clusters(args):
 
     filtered_clusters_props = filter_size_clusters(all_clusters_props, cluster_size_threshold)
 
-    if not filtered_clusters_props:
-        return []
+    corrected_cluster_positions = correct_cluster_positions(filtered_clusters_props, pixels_to_remove_w, pixels_to_remove_h, directions_remove_overlap)
 
-    voxel_cluster_info = build_file_report(img_name, filtered_clusters_props)
+    if not filtered_clusters_props:
+        return f"{img_name}\t0\t0\t0\t0\n"
+
+    voxel_cluster_info = build_file_report(img_name, filtered_clusters_props, corrected_cluster_positions)
 
     return voxel_cluster_info
 
 
-def main(z_stack_image_dir, channel_threshold_conditions, cluster_size_threshold, odirname, num_processers: int = 1):
+def main(z_stack_image_dir, channel_threshold_conditions, image_overlap, cluster_size_threshold, odirname, num_processers: int = 1):
 
     odirname = Path(odirname)
     odirname.mkdir(parents= True, exist_ok=True)
 
-    z_stack_images_path = get_images_path(z_stack_image_dir)
+    z_stack_images_path = get_images_path(z_stack_image_dir, ".nd2")
+
+    all_directions_remove_overlap = get_all_tiles_directions_to_remove_overlap(z_stack_images_path)
 
     sliced_channel_thresholds = slice_channel_threshold(channel_threshold_conditions)
 
     renamed_threshold_conditions = build_out_file_sufix(channel_threshold_conditions)
 
-    voxel_cluster_report_fname = f"{odirname}/voxel_clusters_size_over{cluster_size_threshold}_{renamed_threshold_conditions}.tsv"
+    voxel_cluster_report_fname = f"{odirname}/voxel_clusters_size_over{cluster_size_threshold}_{renamed_threshold_conditions}_test.tsv"
 
     with open(voxel_cluster_report_fname, "w") as voxel_cluster_out:
 
@@ -168,6 +186,8 @@ def main(z_stack_image_dir, channel_threshold_conditions, cluster_size_threshold
 
             args_iter = zip(
                 z_stack_images_path,
+                all_directions_remove_overlap,
+                repeat(image_overlap),
                 repeat(sliced_channel_thresholds),
                 repeat(cluster_size_threshold)
             )
@@ -185,6 +205,7 @@ if __name__ == "__main__":
 
     main(Z_STACK_IMAGE_DIR,
         CHANNEL_THRESHOLD_CONDITIONS,
+        IMAGE_OVERLAP,
         CLUSTER_SIZE_THRESHOLD,
         ODIRNAME,
         NUM_PROCESSERS)
