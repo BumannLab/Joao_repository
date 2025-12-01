@@ -11,9 +11,9 @@ from tqdm import tqdm
 import tifffile as tiff
 
 
-Z_STACK_IMAGE_DIR = "Joao_repository/Data/img_mTB_zstack_voxel_analysis"
+Z_STACK_IMAGE_DIR = "Joao_repository/Data/img_mTB_zstack_voxel_analysis" # "M:/mTB Data/4CHANNELsTAINING_JoaoSamples"
 MAX_PROJECTION_IMAGE_DIR = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
-ODIRNAME = "Joao_repository/Results/Voxel_Analysis/Images"
+ODIRNAME = "Joao_repository/Results/Voxel_Analysis/Binary_Max_Images"
 THRESHOLD_CONDITIONS = "2>=1000,3<=500 2>=1000,3<=250"
 NUM_PROCESSERS = 10
 
