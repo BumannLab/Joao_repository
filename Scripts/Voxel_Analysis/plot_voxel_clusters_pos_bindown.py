@@ -65,7 +65,7 @@ def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, til
     
     for tile_pos , tile_cluster_pos in enumerate(cluster_data.items()):
 
-        tile_name, clusters_positions = tile_cluster_pos
+        _, clusters_positions = tile_cluster_pos
 
         tile_column, tile_row = all_tiles_positions[tile_pos]
 
@@ -103,40 +103,13 @@ def plot_bindown_with_voxel_clusters(bindown_path, cluster_positions, maximum_di
     plt.scatter(datax, datay, marker = "x", s = 2.5, linewidths = 0.7, c ="magenta")
     
     plt.axis('off')
+
     plt.tight_layout()
     plt.savefig(
         f"Joao_Repository/New_Results/Test.png",
         dpi=300,
         bbox_inches="tight",
     )
-
-
-# def plot_bindown_with_voxel_clusters(bindown_path, cluster_positions, maximum_displayed_value):
-
-#     image = read_tiff_image(bindown_path).astype(float)
-
-#     image = image * 255 / maximum_displayed_value
-
-#     datax = [positions[0] for positions in cluster_positions]
-#     datay = [positions[1] for positions in cluster_positions]
-
-#     fig, ax = plt.subplots(figsize=(16, 8))
-
-#     ax.imshow(image, cmap='gray', vmin=0, vmax=255, interpolation='nearest', aspect='auto', origin='upper')
-#     ax.scatter(datax, datay, marker = "x", s = 2.5, linewidths = 0.7, c ="magenta")
-
-#     ax.spines[['right', 'top', 'left', 'bottom']].set_visible(False)
-    
-#     ax.tick_params(axis='y', which='both', bottom=False, top=False, labelbottom=False)
-#     ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
-    
-#     fig.tight_layout()
-#     fig.savefig(
-#         f"Joao_Repository/New_Results/Test.png",
-#         dpi=300,
-#         bbox_inches="tight",
-#     )
-    
     
 
 def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value):
