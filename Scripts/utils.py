@@ -13,6 +13,16 @@ def get_images_path(image_dir, *formats):
     return sorted(images_path)
 
 
+def read_tiff_image(path, inc_metada=False):
+
+    if inc_metada:
+
+        with tiff.TiffFile(path) as tif:
+            return tif.asarray(), tif.imagej_metadata
+        
+    return tiff.imread(path)
+
+
 def slice_channel_threshold(threshold_conditions):
 
     channel_threshold_conditions = []
@@ -25,14 +35,3 @@ def slice_channel_threshold(threshold_conditions):
         channel_threshold_conditions.append((int(channel) - 1, operator, int(threshold))) # channel will go from 1- to 0-based
 
     return channel_threshold_conditions
-
-    
-def read_tiff_image(path, inc_metada=False):
-
-    if inc_metada:
-
-        with tiff.TiffFile(path) as tif:
-            return tif.asarray(), tif.imagej_metadata
-        
-    return tiff.imread(path)
-
