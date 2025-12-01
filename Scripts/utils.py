@@ -2,6 +2,7 @@ import glob
 import re
 
 import tifffile as tiff
+import nd2
 
 def get_images_path(image_dir, *formats):
     
@@ -13,15 +14,26 @@ def get_images_path(image_dir, *formats):
     return sorted(images_path)
 
 
-def read_tiff_image(path, inc_metada=False):
+def read_tiff_image(path, inc_metadata=False):
 
-    if inc_metada:
+    if inc_metadata:
 
-        with tiff.TiffFile(path) as tif:
-            return tif.asarray(), tif.imagej_metadata
+        with tiff.TiffFile(path) as img:
+            return img.asarray(), img.imagej_metadata
         
     return tiff.imread(path)
 
+
+def read_nd2_image(path, inc_metadata=False):
+
+    if inc_metadata:
+
+        with nd2.ND2File(path) as img:
+            return img.asarray(), img.metadata
+        
+    return nd2.imread(path)
+
+read_nd2_image("U:/RG Bumann/ScientificData/Users/João_rodrig0012/João_fromMicroscopy/Slide1/Captured Spinning Disk (1)DAPI SD.nd2", inc_metadata=True)
 
 def slice_channel_threshold(threshold_conditions):
 
