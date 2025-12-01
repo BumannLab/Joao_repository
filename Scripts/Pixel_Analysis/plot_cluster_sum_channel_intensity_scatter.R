@@ -14,7 +14,7 @@ obtain_columns_to_plot <- function(dataframe) {
   
   all_columns <- colnames(dataframe)
   
-  columns_to_read <- as.character(grep("Channel", all_columns, value = TRUE))
+  columns_to_read <- as.character(grep("Intensity", all_columns, value = TRUE))
   
   return (columns_to_read)
 }
@@ -44,19 +44,6 @@ process_dataframe <- function(dataframe, columns_to_read){
 }
 
 
-rename_channel <- function(old_channel_name, channel_map){
-  channel_match <- regmatches(tolower(old_channel_name), regexpr("channel_[0-9]+", tolower(old_channel_name)))
-  
-  col_index <- which(tolower(names(channel_map)) == channel_match)
-  
-  replacement <- channel_map[[col_index]]
-  
-  new_name <- gsub(channel_match, replacement, old_channel_name, ignore.case = TRUE)
-  
-  return(new_name)
-}
-
-
 plot_scatter <- function(dataframe, cols_combinations_to_plot, channel_map, odirname){
   for (col_combn in cols_combinations_to_plot) {
     
@@ -70,13 +57,13 @@ plot_scatter <- function(dataframe, cols_combinations_to_plot, channel_map, odir
       theme_minimal() +
       scale_y_log10() +
       scale_x_log10() +
-      xlab(rename_channel(col1, channel_map)) +
-      ylab(rename_channel(col2, channel_map))
+      xlab(col1) +
+      ylab(col2)
     
     filename <- paste0(odirname, "/", 
-                       rename_channel(col1, channel_map), 
+                       col1, 
                        "_vs_", 
-                       rename_channel(col2, channel_map), 
+                       col2, 
                        "_scatter_plot_test.png")
     
     ggsave(filename, plot, width = 10, height = 10)
@@ -92,16 +79,9 @@ main <- function(tsv_name, channel_of_interest, channel_map, odirname){
   plot_scatter(cluster_df, combn_cols, channel_map, odirname)
 }
 
-tsv_name <- 'Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX/clusters_size5plus_intensity_over1000.tsv'
-channel_of_interest <- 2
-channel_map <- data.frame(
-  Channel_1 = "AL-555",
-  Channel_2 = "SYBR_GOLD",
-  Channel_3 = "DAPI",
-  Channel_4 = "AL-647",
-  stringsAsFactors = FALSE
-)
-odirname <- 'Joao_repository/Results/Pixel_Intensity_Thresholding/New_mTB_Data_4Channel_MAX/Images'
+tsv_name <- 'Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis/clusters_size5plus_intensity_over1000.tsv'
+channel_of_interest <- "SYBRGold"
+odirname <- 'Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis/Plots'
 
 main(tsv_name, channel_of_interest, channel_map, odirname)
 
