@@ -1,5 +1,6 @@
-import glob
+from glob import glob
 import re
+from pathlib import Path
 
 import tifffile as tiff
 import nd2
@@ -9,7 +10,10 @@ def get_images_path(image_dir, *formats):
     images_path = []
     
     for format in formats:
-        images_path.extend(glob.glob(f"{image_dir}/*{format}"))
+
+        paths = Path(image_dir).glob(f"*{format}")
+
+        images_path.extend([p.as_posix() for p in paths])
 
     return sorted(images_path)
 
@@ -29,11 +33,10 @@ def read_nd2_image(path, inc_metadata=False):
     if inc_metadata:
 
         with nd2.ND2File(path) as img:
-            return img.asarray(), img.metadata
-        
+            return img.asarray(), img.metadata    
+    
     return nd2.imread(path)
 
-read_nd2_image("U:/RG Bumann/ScientificData/Users/João_rodrig0012/João_fromMicroscopy/Slide1/Captured Spinning Disk (1)DAPI SD.nd2", inc_metadata=True)
 
 def slice_channel_threshold(threshold_conditions):
 
