@@ -15,8 +15,8 @@ from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove
 Z_STACK_IMAGE_DIR = "M:/mTB Data/4CHANNELsTAINING_JoaoSamples" # "Joao_repository/Data/img_mTB_zstack_voxel_analysis"
 ODIRNAME = "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Voxel_Analysis/"
 
-CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,LAMAL647"
-CHANNEL_THRESHOLD_CONDITIONS = "2>=1000,3<=250" # Maybe change this to be SYBRGold >= 1000
+CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
+CHANNEL_THRESHOLD_CONDITIONS = "2>=1000" # Maybe change this to be SYBRGold >= 1000
 CLUSTER_SIZE_THRESHOLD = 5
 
 IMAGE_OVERLAP = 5
@@ -45,7 +45,7 @@ class Cluster_3D:
             if direction == "top":
 
                 self.Y_centroid += pixels_to_remove_h
-                self.Pixels_coords[:, -2] =+ pixels_to_remove_h
+                self.Pixels_coords[:, -2] += pixels_to_remove_h
 
             elif direction == "right":
 
@@ -54,7 +54,7 @@ class Cluster_3D:
             elif direction == "left":
 
                 self.X_centroid += pixels_to_remove_w
-                self.Pixels_coords[:, -1] =+ pixels_to_remove_w
+                self.Pixels_coords[:, -1] += pixels_to_remove_w
 
         return
 
@@ -187,7 +187,7 @@ def build_voxel_clusters(args):
     filtered_clusters_props = filter_size_clusters(all_clusters_props, cluster_size_threshold)
 
     if not filtered_clusters_props:
-        return f"{img_name}\t-1\t-1\t-1\t-1\t{"\t".join(-1 for _ in range(image.shape[-3]))}\n"
+        return f"{img_name}\t-1\t-1\t-1\t-1\t{"\t".join("-1" for _ in range(image.shape[-3]))}\n"
     
     cluster_objects = list()
     
