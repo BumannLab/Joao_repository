@@ -12,15 +12,15 @@ from utils import slice_channel_threshold, get_images_path
 from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove_overlap, compute_overlap_pixels, cut_overlap
 
 
-Z_STACK_IMAGE_DIR = "M:/mTB Data/4CHANNELsTAINING_JoaoSamples" # "Joao_repository/Data/img_mTB_zstack_voxel_analysis"
-ODIRNAME = "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Voxel_Analysis/"
+Z_STACK_IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1" # "Joao_repository/Data/img_mTB_zstack_voxel_analysis"
+ODIRNAME = "Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/2M_ammonium_acetate/Full_scan"
 
-CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
-CHANNEL_THRESHOLD_CONDITIONS = "2>=1000" # Maybe change this to be SYBRGold >= 1000
+CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
+CHANNEL_THRESHOLD_CONDITIONS = "1>=500" # Maybe change this to be SYBRGold >= 1000
 CLUSTER_SIZE_THRESHOLD = 5
 
 IMAGE_OVERLAP = 5
-NUM_PROCESSERS = 1
+NUM_PROCESSERS = 20
 
 
 @dataclass
@@ -187,7 +187,8 @@ def build_voxel_clusters(args):
     filtered_clusters_props = filter_size_clusters(all_clusters_props, cluster_size_threshold)
 
     if not filtered_clusters_props:
-        return f"{img_name}\t-1\t-1\t-1\t-1\t{"\t".join("-1" for _ in range(image.shape[-3]))}\n"
+        no_intensity = '\t'.join('-1' for _ in range(image.shape[-3]))
+        return f"{img_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
     
     cluster_objects = list()
     
@@ -225,8 +226,8 @@ def main(z_stack_image_dir, channel_markers, channel_threshold_conditions, clust
     voxel_cluster_report_fname = f"{odirname}/voxel_clusters_size_over{cluster_size_threshold}_{renamed_threshold_conditions}_test2.tsv"
 
     with open(voxel_cluster_report_fname, "w") as voxel_cluster_out:
-
-        header = (f"Image\tVolume\tX\tY\tZ\t{"\t".join(f"{marker}_Summed_Intensity" for marker in channel_markers.split(","))}\n")
+        channel_cols = "\t".join(f"{marker}_Summed_Intensity" for marker in channel_markers.split(","))
+        header = (f"Image\tVolume\tX\tY\tZ\t{channel_cols}\n")
         voxel_cluster_out.write(header)
         
         with Pool(processes=num_processers) as pool:
