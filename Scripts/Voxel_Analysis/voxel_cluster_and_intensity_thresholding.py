@@ -12,11 +12,11 @@ from utils import slice_channel_threshold, get_images_path
 from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove_overlap, compute_overlap_pixels, cut_overlap
 
 
-Z_STACK_IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1" # "Joao_repository/Data/img_mTB_zstack_voxel_analysis"
-ODIRNAME = "Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/2M_ammonium_acetate/Full_scan"
+Z_STACK_IMAGE_DIR = "/data/joao/mTBData/4CHANNELsTAINING_JoaoSamples"
+ODIRNAME = "Results/Previous_Destaining/CD68AL555_SYBRGold_DAPI_CD68AL647/Voxel_Analysis/"
 
-CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
-CHANNEL_THRESHOLD_CONDITIONS = "1>=500" # Maybe change this to be SYBRGold >= 1000
+CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
+CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=1000"
 CLUSTER_SIZE_THRESHOLD = 5
 
 IMAGE_OVERLAP = 5
@@ -70,11 +70,11 @@ class Cluster_3D:
         return pixel_intensities
     
 
-    def obtain_cluster_summed_intensities(self):
+    def obtain_cluster_mean_intensities(self):
 
         intensities = self.get_channel_intensity()
 
-        sum_intensities = np.sum(intensities, axis=0)
+        sum_intensities = np.mean(intensities, axis=0)
 
         return sum_intensities.astype(str)
     
@@ -90,7 +90,7 @@ def build_out_file_sufix(threshold_conditions):
     if "<" in threshold_conditions:
         threshold_conditions = threshold_conditions.replace("<", "_less_")
 
-    threshold_conditions = "channel" + threshold_conditions.replace(",", "_channel")
+    threshold_conditions = threshold_conditions.replace(",", "_")
 
     return threshold_conditions
 
@@ -156,7 +156,7 @@ def build_file_report(cluster_objects):
             str(cluster.X_centroid), 
             str(cluster.Y_centroid),
             str(cluster.Z_centroid),
-            *cluster.obtain_cluster_summed_intensities(),
+            *cluster.obtain_cluster_mean_intensities(),
         ])
 
         file_content.append(content)
@@ -215,18 +215,20 @@ def main(z_stack_image_dir, channel_markers, channel_threshold_conditions, clust
     odirname = Path(odirname)
     odirname.mkdir(parents= True, exist_ok=True)
 
+    channel_markers = channel_markers.split(",")
+
     z_stack_images_path = get_images_path(z_stack_image_dir, ".nd2")
 
     all_directions_remove_overlap = get_all_tiles_directions_to_remove_overlap(z_stack_images_path)
 
-    sliced_channel_thresholds = slice_channel_threshold(channel_threshold_conditions)
+    sliced_channel_thresholds = slice_channel_threshold(channel_threshold_conditions, channel_markers)
 
     renamed_threshold_conditions = build_out_file_sufix(channel_threshold_conditions)
 
-    voxel_cluster_report_fname = f"{odirname}/voxel_clusters_size_over{cluster_size_threshold}_{renamed_threshold_conditions}_test2.tsv"
+    voxel_cluster_report_fname = f"{odirname}/voxel_clusters_size_over{cluster_size_threshold}_{renamed_threshold_conditions}.tsv"
 
     with open(voxel_cluster_report_fname, "w") as voxel_cluster_out:
-        channel_cols = "\t".join(f"{marker}_Summed_Intensity" for marker in channel_markers.split(","))
+        channel_cols = "\t".join(f"{marker}_Mean_Intensity" for marker in channel_markers)
         header = (f"Image\tVolume\tX\tY\tZ\t{channel_cols}\n")
         voxel_cluster_out.write(header)
         
