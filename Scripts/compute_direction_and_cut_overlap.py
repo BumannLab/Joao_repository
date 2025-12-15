@@ -1,4 +1,4 @@
-from math import ceil
+from math import ceil, floor
 import re
 
 
@@ -84,10 +84,25 @@ def get_all_tiles_directions_to_remove_overlap(tile_names: list[str]):
     return all_tiles_directions
 
 
-def compute_overlap_pixels(overlap, height, width):
+def compute_overlap_pixels(overlap, height, width, rounding_mode = "nearest"):
 
-    pixels_to_remove_h = ceil(height * (overlap / 100))
-    pixels_to_remove_w = ceil(width  * (overlap / 100))
+    pixels_to_remove_h = height * (overlap / 100)
+    pixels_to_remove_w = width  * (overlap / 100)
+
+    if rounding_mode == "ceil":
+
+        pixels_to_remove_h = ceil(pixels_to_remove_h)
+        pixels_to_remove_w = ceil(pixels_to_remove_w)
+
+    elif rounding_mode == "floor":
+
+        pixels_to_remove_h = floor(pixels_to_remove_h)
+        pixels_to_remove_w = floor(pixels_to_remove_w)
+
+    elif rounding_mode == "nearest":
+
+        pixels_to_remove_h = round(pixels_to_remove_h)
+        pixels_to_remove_w = round(pixels_to_remove_w)
 
     return pixels_to_remove_h, pixels_to_remove_w
 
