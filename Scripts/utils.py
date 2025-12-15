@@ -38,7 +38,7 @@ def read_nd2_image(path, inc_metadata=False):
     return nd2.imread(path)
 
 
-def slice_channel_threshold(threshold_conditions):
+def slice_channel_threshold(threshold_conditions, channel_markers):
 
     channel_threshold_conditions = []
     
@@ -46,7 +46,7 @@ def slice_channel_threshold(threshold_conditions):
 
         try: channel, operator, threshold = re.split(r'(<=|>=|<|>)', channel_threshold)
         except: raise ValueError(f"The operator in \"{channel_threshold}\" is not valid.")
-        
-        channel_threshold_conditions.append((int(channel) - 1, operator, int(threshold))) # channel will go from 1- to 0-based
+
+        channel_threshold_conditions.append((channel_markers.index(channel), operator, int(threshold))) # channel will go from 1- to 0-based
 
     return channel_threshold_conditions
