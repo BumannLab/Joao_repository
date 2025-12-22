@@ -1,5 +1,6 @@
 import csv
 from collections import defaultdict
+from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 
@@ -7,7 +8,7 @@ from utils import read_tiff_image
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_corrected
 
 
-VOXEL_CLUSTERS_FILE =  "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Voxel_Analysis/voxel_clusters_size_over5_channel2_greater_equal_1000_channel3_less_equal_250_test.tsv"  # "Joao_repository/Results/test_data.tsv"
+VOXEL_CLUSTERS_FILE = "Joao_repository/New_Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/voxel_clusters_size_over5_channel1_greater_equal_500.tsv"
 BINDOWN_IMAGE_FILE = "M:/Joao/5xbindown_stitched/stitched_01_bin5x.tif"
 
 TILE_HEIGHT = 2304
@@ -18,6 +19,33 @@ BINDOWN_BY = 5
 
 MAXIMUM_DISPLAYED_VALUE = 400
 
+ALLOW_RANGE = True
+RANGE_CATEGORIES = [500, 800, 1000] # e.g 500,800,1000 -> [500, 800[ ; [800, 1000[ ; [1000, 1000+[
+
+@dataclass
+class Cluster:
+    X_centroid: float
+    Y_centroid: float
+
+    def bindowned_rescaled_centroid_pos(self, tile_column, tile_row, tile_height, tile_width,
+                                        pixels_remove_width, pixels_remove_height, bindown_by):
+        
+        # Since each tile is being downscaled first and then added to the bindown overview. It will first compute how much pixels to remove
+        # based on overlap (e.g 2304 * 0.05 (5% overlap) = 115.2 ~ 115, it will round based on the proximity to the previous or next integer). Then the bindown
+        # is done (e.g. 2304 - 115 = 2189 / 5 (bindown by 5) = 437.8 ~ 438, same rounding principle as before)
+
+        # In case in the future each tile is stitched together and then downscaling its applied to the final stitched version, change this function
+        bindown_tile_width = round((tile_width - pixels_remove_width) / bindown_by) * tile_column
+        bindown_tile_height = round((tile_height - pixels_remove_height) / bindown_by) * tile_row
+        
+        bindown_x_centroid = round(self.X_centroid / bindown_by)
+        bindown_y_centroid = round(self.Y_centroid / bindown_by)
+
+        rescaled_bindown_x = bindown_x_centroid + bindown_tile_width
+        rescaled_bindown_y = bindown_y_centroid + bindown_tile_height
+
+        return rescaled_bindown_x, rescaled_bindown_y
+        
 
 def read_cluster_data(file_path):
 
@@ -29,34 +57,11 @@ def read_cluster_data(file_path):
         for rows in reader:
             tile_name = rows["Image"]
 
-            if rows["Volume"] == "0":
-                cluster_data[tile_name].append((-1, -1))
-            else: # once we change the normal script to write -1 when there is no bacteria found and run it replace the previous tuple by the tuple present down
-                cluster_pos = (float(rows["X"]), float(rows["Y"]))
+            cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]))
 
             cluster_data[tile_name].append(cluster_pos)
 
     return cluster_data
-
-
-def bindowned_rescaled_cluster_x_y_pos(cluster_pos, tile_height, tile_width, tile_column, tile_row, 
-                                       pixels_remove_width, pixels_remove_height, bindown_by):
-
-    x, y = cluster_pos
-
-    if tile_row > 0:
-     rescaled_y = y - pixels_remove_height + tile_height + ((tile_height - pixels_remove_height) * (tile_row - 1))
-
-    else:
-        rescaled_y = y
-
-    if tile_row % 2 == 0:
-        rescaled_x = x - pixels_remove_width + tile_width + ((tile_width - pixels_remove_width) * (tile_column - 1))
-
-    elif tile_row % 2 != 0:
-        rescaled_x = x + ((tile_width - pixels_remove_width) * (tile_column))
-
-    return rescaled_x / bindown_by, rescaled_y / bindown_by
 
 
 def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by):
@@ -71,14 +76,13 @@ def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, til
 
         for cluster_pos in clusters_positions:
 
-            if cluster_pos == (-1, -1):
+            if cluster_pos == Cluster(-1, -1):
                 break
 
-            rescaled_pos = bindowned_rescaled_cluster_x_y_pos(cluster_pos,
+            rescaled_pos = cluster_pos.bindowned_rescaled_centroid_pos(tile_column,
+                                                                tile_row,
                                                                 tile_height,
                                                                 tile_width,
-                                                                tile_column,
-                                                                tile_row,
                                                                 pixels_to_remove_h,
                                                                 pixels_to_remove_w,
                                                                 bindown_by)
@@ -134,4 +138,6 @@ if __name__ == "__main__":
          TILE_WIDTH,
          TILE_OVERLAP,
          BINDOWN_BY,
-         MAXIMUM_DISPLAYED_VALUE)
+         MAXIMUM_DISPLAYED_VALUE,
+         ALLOW_RANGE,
+         RANGE_CATEGORIES)
