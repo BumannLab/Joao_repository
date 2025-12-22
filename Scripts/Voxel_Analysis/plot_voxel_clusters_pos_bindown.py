@@ -29,6 +29,7 @@ RANGE_CATEGORIES = [500, 800, 1000] # e.g 500,800,1000 -> [500, 800[ ; [800, 100
 class Cluster:
     X_centroid: float
     Y_centroid: float
+    Range_Categorie: int = 65535
 
     def bindowned_rescaled_centroid_pos(self, tile_column, tile_row, tile_height, tile_width,
                                         pixels_remove_width, pixels_remove_height, bindown_by):
@@ -50,7 +51,18 @@ class Cluster:
         return rescaled_bindown_x, rescaled_bindown_y
         
 
-def read_cluster_data(file_path):
+def obtain_range_limits(range_categories):
+    range_limits = []
+    
+    for i in range(len(range_categories)):
+        
+        try: range_limits.append((range_categories[i], range_categories[i+1]))
+        except: range_limits.append((range_categories[i], 65536))
+
+    return range_limits
+
+
+def read_cluster_data(file_path, allow_range, range_limits):
 
     cluster_data = defaultdict(list)
 
@@ -60,7 +72,24 @@ def read_cluster_data(file_path):
         for rows in reader:
             tile_name = rows["Image"]
 
-            cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]))
+            if allow_range:
+                for idx, min_max_range in enumerate(range(len(range_limits))):
+
+                    print(min_max_range)
+                    
+                    sybr_gold_mean_intensity = rows["SYBRGold_Summed_Intensity"]
+                    dapi_mean_intensity = rows["DAPI_Summed_Intensity"]
+                    min_intensity, max_intensity = min_max_range
+                    
+                    if (min_intensity >= sybr_gold_mean_intensity > max_intensity and 
+                        dapi_mean_intensity <= 250):
+                        cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]), idx + 1)
+                    
+                    else:
+                        cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]))
+
+ 
+            cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]), idx)
 
             cluster_data[tile_name].append(cluster_pos)
 
@@ -79,7 +108,7 @@ def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, til
 
         for cluster_pos in clusters_positions:
 
-            if cluster_pos == Cluster(-1, -1):
+            if cluster_pos == Cluster(-1, -1, 65535):
                 break
 
             rescaled_pos = cluster_pos.bindowned_rescaled_centroid_pos(tile_column,
@@ -148,9 +177,13 @@ def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_position
     tiff.imwrite(f"Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Plots/SYBRGold_above_500_cluster_pos_in_bindown5x.tiff", np.array(img))
 
 
-def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value):
+def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value, allow_range, range_categories):
+    
+    range_limits = obtain_range_limits(range_categories)
 
-    cluster_pos_data = read_cluster_data(voxel_clusters_file)
+    cluster_pos_data = read_cluster_data(voxel_clusters_file, allow_range, range_limits)
+    print(cluster_pos_data)
+    return
 
     all_tiles_positions = get_all_tiles_position_corrected(cluster_pos_data.keys())
 
