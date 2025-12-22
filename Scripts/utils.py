@@ -5,6 +5,7 @@ from pathlib import Path
 import tifffile as tiff
 import nd2
 
+
 def get_images_path(image_dir, *formats):
     
     images_path = []
@@ -24,18 +25,19 @@ def read_tiff_image(path, inc_metadata=False):
 
         with tiff.TiffFile(path) as img:
             return img.asarray(), img.imagej_metadata
-        
+    
     return tiff.imread(path)
 
 
 def read_nd2_image(path, inc_metadata=False):
-
+    
     if inc_metadata:
 
         with nd2.ND2File(path) as img:
             return img.asarray(), img.metadata    
     
     return nd2.imread(path)
+    
 
 
 def slice_channel_threshold(threshold_conditions, channel_markers):

@@ -36,9 +36,10 @@ combinations_of_columns_for_scatter <- function(channel_of_interest, columns_to_
 }
 
 
-process_dataframe <- function(dataframe, columns_to_read){
+filter_rows_no_cluster <- function(dataframe, columns_to_read){
   dataframe <- dataframe |>
-    mutate(across(all_of(columns_to_read), ~ .x / Area))
+
+    filter(if_any(any_of(c("Area", "Volume")), ~ .x > 0))  
   
   return (dataframe)
 }
@@ -79,9 +80,9 @@ main <- function(tsv_name, channel_of_interest, channel_map, odirname){
   plot_scatter(cluster_df, combn_cols, channel_map, odirname)
 }
 
-tsv_name <- 'Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis/clusters_size5plus_intensity_over1000.tsv'
+tsv_name <- "/data/joao/Scripts/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/2M_ammonium_acetate/Full_scan/voxel_clusters_size_over5_channel1_greater_equal_500_test2.tsv"
 channel_of_interest <- "SYBRGold"
-odirname <- 'Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis/Plots'
+odirname <- '/data/joao/Scripts/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/2M_ammonium_acetate/Full_scan/2/Plots'
 
 main(tsv_name, channel_of_interest, channel_map, odirname)
 

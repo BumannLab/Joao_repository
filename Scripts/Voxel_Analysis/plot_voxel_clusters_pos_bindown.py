@@ -3,6 +3,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
+import tifffile as tiff
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 
 from utils import read_tiff_image
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_corrected
@@ -92,29 +95,58 @@ def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, til
     return bindowned_cluster_positions
 
 
-def plot_bindown_with_voxel_clusters(bindown_path, cluster_positions, maximum_displayed_value):
-
-    image = read_tiff_image(bindown_path).astype(float)
-
-    image = image * 255 / maximum_displayed_value
+def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_positions, maximum_displayed_value):
+    
+    bindown_image = bindown_image * 255 / maximum_displayed_value
 
     datax = [positions[0] for positions in cluster_positions]
     datay = [positions[1] for positions in cluster_positions]
 
     plt.figure(figsize=(16, 8), frameon=False)
 
-    plt.imshow(image, cmap='gray', vmin=0, vmax=255, interpolation='nearest', aspect='auto', origin='upper')
+    plt.imshow(bindown_image, cmap='gray', vmin=0, vmax=255, interpolation='nearest', aspect='auto', origin='upper')
     plt.scatter(datax, datay, marker = "x", s = 2.5, linewidths = 0.7, c ="magenta")
     
     plt.axis('off')
 
     plt.tight_layout()
     plt.savefig(
-        f"Joao_Repository/New_Results/Test.png",
+        f"Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Plots/SYBRGold_above_500_cluster_pos_in_bindown5x.png",
         dpi=300,
         bbox_inches="tight",
     )
-    
+
+
+def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_positions, out_path):
+
+    img = Image.fromarray(
+        np.zeros(image_shape, dtype=np.uint16)
+    )
+
+    draw = ImageDraw.Draw(img)
+
+    font = ImageFont.load_default(size = 30)
+
+    text = "x"
+
+    for cluster_pos in cluster_positions:
+
+        x, y = cluster_pos
+        
+        bbox = draw.textbbox((0, 0), text, font=font)
+
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        draw.text(
+            (int(x - text_w / 2), int(y - text_h / 2)),
+            text,
+            fill=65535,
+            font=font
+        )
+
+    tiff.imwrite(f"Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Plots/SYBRGold_above_500_cluster_pos_in_bindown5x.tiff", np.array(img))
+
 
 def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value):
 
@@ -122,13 +154,15 @@ def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_
 
     all_tiles_positions = get_all_tiles_position_corrected(cluster_pos_data.keys())
 
-    pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(tile_overlap, tile_height, tile_width)
-
-    pixels_to_remove_h, pixels_to_remove_w = pixels_to_remove_h - 1, pixels_to_remove_w - 1
+    pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(tile_overlap, tile_height, tile_width, rounding_mode="nearest")
 
     resized_cluster_pos = resize_cluster_positions(cluster_pos_data, all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by)
 
-    plot_bindown_with_voxel_clusters(bindown_image_file, resized_cluster_pos, maximum_displayed_value)
+    bindown_image = read_tiff_image(bindown_image_file).astype(float)
+
+    plot_bindown_with_voxel_clusters_png_overview(bindown_image, resized_cluster_pos, maximum_displayed_value)
+
+    plot_bindown_with_voxel_clusters_tiff_overview(bindown_image.shape, resized_cluster_pos, "")
 
 
 if __name__ == "__main__":

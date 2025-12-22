@@ -85,6 +85,9 @@ def get_all_tiles_directions_to_remove_overlap(tile_names: list[str]):
 
 
 def compute_overlap_pixels(overlap, height, width, rounding_mode = "nearest"):
+    """
+    rounding_mode: ceil, floor, nearest
+    """
 
     pixels_to_remove_h = height * (overlap / 100)
     pixels_to_remove_w = width  * (overlap / 100)
