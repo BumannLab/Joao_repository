@@ -11,7 +11,7 @@ from utils import read_tiff_image
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_corrected
 
 
-VOXEL_CLUSTERS_FILE = "Joao_repository/New_Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/voxel_clusters_size_over5_channel1_greater_equal_500.tsv"
+VOXEL_CLUSTERS_FILE = "Joao_repository/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/voxel_clusters_size_over5_channel1_greater_equal_500.tsv"
 BINDOWN_IMAGE_FILE = "M:/Joao/5xbindown_stitched/stitched_01_bin5x.tif"
 
 TILE_HEIGHT = 2304
