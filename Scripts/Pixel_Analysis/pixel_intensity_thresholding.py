@@ -4,6 +4,7 @@ import time
 from itertools import repeat
 from multiprocessing import Pool
 from pathlib import Path
+from dataclasses import dataclass
 
 import tifffile as tiff
 import numpy as np
@@ -12,6 +13,61 @@ from skimage import measure
 
 from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove_overlap, compute_overlap_pixels, cut_overlap
 from utils import get_images_path
+
+
+@dataclass
+class Tile:
+    Name: str
+    Matrix: np.typing.NDArray[np.uint16]
+
+
+@dataclass
+class Cluster_3D:
+    Tile_Info: Tile
+    Volume: int
+    X_centroid: int
+    Y_centroid: int
+    Z_centroid: int
+    Pixels_coords: np.typing.NDArray[np.int64]
+
+
+    def correct_positions(self, pixels_to_remove_w, pixels_to_remove_h, directions):
+    
+        for direction in directions:            
+            if direction == "top":
+
+                self.Y_centroid += pixels_to_remove_h
+                self.Pixels_coords[:, -2] += pixels_to_remove_h
+
+            elif direction == "right":
+
+                pass
+
+            elif direction == "left":
+
+                self.X_centroid += pixels_to_remove_w
+                self.Pixels_coords[:, -1] += pixels_to_remove_w
+
+        return
+
+
+    def get_channel_intensity(self):
+
+        x_indixes = self.Pixels_coords[:, -1]
+        y_indixes = self.Pixels_coords[:, -2]
+
+        pixel_intensities = self.Tile_Info.Matrix[:, y_indixes, x_indixes]
+
+        return pixel_intensities
+    
+
+    def obtain_cluster_mean_intensities(self):
+
+        intensities = self.get_channel_intensity()
+
+        sum_intensities = np.mean(intensities, axis=0)
+
+        return sum_intensities.astype(str)
 
 
 IMAGE_DIR = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
@@ -91,7 +147,7 @@ def find_pixel_clusters(
     coi_image = image[channel_of_interest]
     mask = coi_image >= intensity_threshold
     labeled = measure.label(mask, connectivity=2)
-    clusters_properties = measure.regionprops(labeled, intensity_image=coi_image)
+    clusters_properties = measure.regionprops(labeled)
     return clusters_properties
 
 
@@ -111,55 +167,6 @@ def filter_clusters(all_clusters, cluster_size_threshold: int):
         cluster for cluster in all_clusters if cluster.area > cluster_size_threshold
     ]
     return filtered_clusters
-
-
-def get_channel_intensity(image: np.ndarray, pixel_coords):
-    """
-    Input:
-        - image:  Image with the intensity values in each pixel for all channels.
-        - pixel_coords: x and y coordinates of the pixels that passed the threshold
-    Output: 
-        - pixel_intensities: List with all the intensities for all channels for all pixels coordinates given
-
-    Method:
-        - Extracts all the x and y position indexes and then slices the image (which is a list) retrieving only the coordinates given
-        and then transposes the matrix for a more accessible list format to work with
-    """
-
-    x_indices = pixel_coords[:, 0]
-    y_indices = pixel_coords[:, 1]
-
-    pixel_intensities = image[:, x_indices, y_indices].T
-    return pixel_intensities
-
-
-def get_summed_intensities(image, cluster_coords):
-    intensities = get_channel_intensity(image, cluster_coords)
-
-    sum_intensities = np.sum(intensities, axis=0)
-
-    return sum_intensities.astype(str)
-
-
-def correct_cluster_positions(filtered_clusters, pixels_to_remove_w, pixels_to_remove_h, directions):
-    corrected_cluster_positions = list()
-
-    for cluster in filtered_clusters: 
-
-        y, x = cluster.centroid
-        
-        for direction in directions:            
-
-            if direction == "top":
-                y += pixels_to_remove_h
-            elif direction == "right":
-                pass
-            elif direction == "left":
-                x += pixels_to_remove_w
-        
-        corrected_cluster_positions.append((y, x))
-
-    return corrected_cluster_positions
 
 
 def build_cluster_report(image_name, image, cluster_report, corrected_centroid_positios):
@@ -255,7 +262,7 @@ def analyse_clusters_and_pixels(args):
 
         img_height, img_width = image.shape[-2:]
 
-        pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(overlap, img_height, img_width)
+        pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(overlap, img_height, img_width, rounding_mode="ceil")
 
         image = cut_overlap(image, pixels_to_remove_h, pixels_to_remove_w, directions)
 
@@ -370,3 +377,272 @@ if __name__ == "__main__":
     )
 
     print(f"Finished in {time.time() - start_time} seconds")
+
+
+from itertools import repeat
+from multiprocessing import Pool
+from dataclasses import dataclass
+from pathlib import Path
+
+import nd2
+import numpy as np
+from tqdm import tqdm
+from skimage.measure import label, regionprops
+
+from utils import slice_channel_threshold, get_images_path
+from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove_overlap, compute_overlap_pixels, cut_overlap
+
+
+Z_STACK_IMAGE_DIR = "/data/joao/mTBData/4CHANNELsTAINING_JoaoSamples"
+ODIRNAME = "Results/Previous_Destaining/CD68AL555_SYBRGold_DAPI_CD68AL647/Voxel_Analysis/"
+
+CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
+CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=1000"
+CLUSTER_SIZE_THRESHOLD = 5
+
+IMAGE_OVERLAP = 5
+NUM_PROCESSERS = 20
+
+
+@dataclass
+class Tile:
+    Name: str
+    Matrix: np.typing.NDArray[np.uint16]
+
+
+@dataclass
+class Cluster_3D:
+    Tile_Info: Tile
+    Volume: int
+    X_centroid: int
+    Y_centroid: int
+    Z_centroid: int
+    Pixels_coords: np.typing.NDArray[np.int64]
+
+
+    def correct_positions(self, pixels_to_remove_w, pixels_to_remove_h, directions):
+    
+        for direction in directions:            
+            if direction == "top":
+
+                self.Y_centroid += pixels_to_remove_h
+                self.Pixels_coords[:, -2] += pixels_to_remove_h
+
+            elif direction == "right":
+
+                pass
+
+            elif direction == "left":
+
+                self.X_centroid += pixels_to_remove_w
+                self.Pixels_coords[:, -1] += pixels_to_remove_w
+
+        return
+
+
+    def get_channel_intensity(self):
+
+        x_indixes = self.Pixels_coords[:, -1]
+        y_indixes = self.Pixels_coords[:, -2]
+        z_indexes = self.Pixels_coords[:, -3]
+
+        pixel_intensities = self.Tile_Info.Matrix[z_indexes, :, y_indixes, x_indixes]
+
+        return pixel_intensities
+    
+
+    def obtain_cluster_mean_intensities(self):
+
+        intensities = self.get_channel_intensity()
+
+        sum_intensities = np.mean(intensities, axis=0)
+
+        return sum_intensities.astype(str)
+    
+
+def build_out_file_sufix(threshold_conditions):
+
+    if ">=" in threshold_conditions:
+        threshold_conditions = threshold_conditions.replace(">=", "_greater_equal_")
+    if "<=" in threshold_conditions:
+        threshold_conditions = threshold_conditions.replace("<=", "_less_equal_")
+    if ">" in threshold_conditions:
+        threshold_conditions = threshold_conditions.replace(">", "_greater_")
+    if "<" in threshold_conditions:
+        threshold_conditions = threshold_conditions.replace("<", "_less_")
+
+    threshold_conditions = threshold_conditions.replace(",", "_")
+
+    return threshold_conditions
+
+
+def voxel_channel_intensity_threshold(image, channel, operator, threshold):
+
+    if operator == ">":
+        voxel_coi_intensity_mask = image[:, channel] > threshold
+    elif operator == ">=":
+        voxel_coi_intensity_mask = image[:, channel] >= threshold
+    elif operator == "<":
+        voxel_coi_intensity_mask = image[:, channel] < threshold
+    elif operator == "<=":
+        voxel_coi_intensity_mask = image[:, channel] <= threshold
+
+    return voxel_coi_intensity_mask
+
+
+def multi_channel_threshold_mask(image, thresholds):
+    image_masks = []
+
+    for channel_threshold in thresholds:
+
+        channel, operator, threshold = channel_threshold
+
+        channel_mask = voxel_channel_intensity_threshold(
+            image,
+            channel,
+            operator,
+            threshold 
+        )
+
+        image_masks.append(channel_mask)
+
+    final_mask = np.logical_and.reduce(image_masks)
+
+    return final_mask
+
+
+def find_voxel_clusters(intensity_thresholded_mask):
+
+    mask_label = label(intensity_thresholded_mask, connectivity = 3)
+    clusters_properties = regionprops(mask_label)
+
+    return clusters_properties
+
+
+def filter_size_clusters(all_clusters_props, cluster_size_threshold: int = 5):
+    filtered_clusters = [
+        cluster for cluster in all_clusters_props if cluster.area > cluster_size_threshold
+    ]
+    return filtered_clusters
+
+
+def build_file_report(cluster_objects):
+    file_content = list()
+
+    for cluster in cluster_objects:
+
+        content = "\t".join([
+            cluster.Tile_Info.Name,
+            str(cluster.Volume),
+            str(cluster.X_centroid), 
+            str(cluster.Y_centroid),
+            str(cluster.Z_centroid),
+            *cluster.obtain_cluster_mean_intensities(),
+        ])
+
+        file_content.append(content)
+        
+    return "\n".join(file_content) + "\n"
+
+
+def build_voxel_clusters(args):
+
+    image_path, directions_remove_overlap, image_overlap, channel_threshold_conditions, cluster_size_threshold = args
+
+    img_name = image_path.split("/")[-1].split(".")[0]
+
+    image = nd2.imread(image_path)
+
+    tile = Tile(img_name, image)
+
+    img_height, img_width = image.shape[-2:]
+
+    pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(image_overlap, img_height, img_width)
+
+    image = cut_overlap(image, pixels_to_remove_h, pixels_to_remove_w, directions_remove_overlap)
+
+    final_thresholded_mask = multi_channel_threshold_mask(image, channel_threshold_conditions)
+
+    all_clusters_props = find_voxel_clusters(final_thresholded_mask)
+
+    filtered_clusters_props = filter_size_clusters(all_clusters_props, cluster_size_threshold)
+
+    if not filtered_clusters_props:
+        no_intensity = '\t'.join('-1' for _ in range(image.shape[-3]))
+        return f"{img_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
+    
+    cluster_objects = list()
+    
+    for cluster in filtered_clusters_props:
+
+        cluster_obj = Cluster_3D(tile,
+                                cluster.area,
+                                cluster.centroid[-1],
+                                cluster.centroid[-2],
+                                cluster.centroid[-3],
+                                cluster.coords
+                                )
+        
+        cluster_obj.correct_positions(pixels_to_remove_w, pixels_to_remove_h, directions_remove_overlap)
+        cluster_objects.append(cluster_obj)
+
+    voxel_cluster_info = build_file_report(cluster_objects)
+
+    return voxel_cluster_info
+
+
+def main(image_dir, channel_markers, channel_threshold_conditions, channel_of_interest, cluster_size_threshold, image_overlap, odirname, num_processers: int = 1):
+
+    odirname = Path(odirname)
+    odirname.mkdir(parents= True, exist_ok=True)
+
+    channel_markers = channel_markers.split(",")
+
+    images_path = get_images_path(image_dir, ".tif", ".tiff")
+
+    all_directions_remove_overlap = get_all_tiles_directions_to_remove_overlap(images_path)
+
+    sliced_channel_thresholds = slice_channel_threshold(channel_threshold_conditions, channel_markers)
+
+    renamed_threshold_conditions = build_out_file_sufix(channel_threshold_conditions)
+
+    pixel_cluster_report_fname = f"{odirname}/pixel_clusters_size_over{cluster_size_threshold}_{renamed_threshold_conditions}.tsv"
+    pixel_report_fname = f"{odirname}/pixels_{renamed_threshold_conditions}.tsv"
+
+    with open(pixel_report_fname, "w") as pixel_out, open(
+        pixel_cluster_report_fname, "w"
+    ) as cluster_out:
+
+        pixel_header = build_pixel_report_header(
+            channel_markers, channel_of_interest
+        )
+        cluster_header = build_cluster_report_header(channel_markers)
+
+        pixel_out.write(pixel_header)
+        cluster_out.write(cluster_header)
+        
+        with Pool(processes=num_processers) as pool:
+
+            args_iter = zip(
+                images_path,
+                all_directions_remove_overlap,
+                repeat(image_overlap),
+                repeat(sliced_channel_thresholds),
+                repeat(cluster_size_threshold)
+            )
+
+            for voxel_cluster_info in tqdm(pool.imap(build_voxel_clusters,
+                            args_iter), total=len(images_path)):
+
+                voxel_cluster_out.write(voxel_cluster_info)
+
+
+if __name__ == "__main__":
+
+    main(Z_STACK_IMAGE_DIR,
+        CHANNEL_MARKERS,
+        CHANNEL_THRESHOLD_CONDITIONS,
+        CLUSTER_SIZE_THRESHOLD,
+        IMAGE_OVERLAP,
+        ODIRNAME,
+        NUM_PROCESSERS)

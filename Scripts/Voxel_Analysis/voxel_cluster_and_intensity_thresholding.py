@@ -8,15 +8,15 @@ import numpy as np
 from tqdm import tqdm
 from skimage.measure import label, regionprops
 
-from utils import slice_channel_threshold, get_images_path
+from utils import slice_channel_threshold, get_images_path, read_nd2_image
 from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove_overlap, compute_overlap_pixels, cut_overlap
 
 
-Z_STACK_IMAGE_DIR = "/data/joao/mTBData/4CHANNELsTAINING_JoaoSamples"
-ODIRNAME = "Results/Previous_Destaining/CD68AL555_SYBRGold_DAPI_CD68AL647/Voxel_Analysis/"
+Z_STACK_IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1/"
+ODIRNAME = "Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/"
 
-CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
-CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=1000"
+CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
+CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=500"
 CLUSTER_SIZE_THRESHOLD = 5
 
 IMAGE_OVERLAP = 5
@@ -166,17 +166,22 @@ def build_file_report(cluster_objects):
 
 def build_voxel_clusters(args):
 
-    image_path, directions_remove_overlap, image_overlap, channel_threshold_conditions, cluster_size_threshold = args
+    image_path, num_channels, directions_remove_overlap, image_overlap, channel_threshold_conditions, cluster_size_threshold = args
 
     img_name = image_path.split("/")[-1].split(".")[0]
 
-    image = nd2.imread(image_path)
-
+    try: image = read_nd2_image(image_path)
+    except Exception as e:
+        print(f"Error loading {image_path}. As a result this image will be classified as having no clusters.")
+        print(f"The error in question is :\n{e}")
+        no_intensity = '\t'.join('-1' for _ in range(num_channels))
+        return f"{img_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
+    
     tile = Tile(img_name, image)
 
     img_height, img_width = image.shape[-2:]
 
-    pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(image_overlap, img_height, img_width)
+    pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(image_overlap, img_height, img_width, rounding_mode="ceil")
 
     image = cut_overlap(image, pixels_to_remove_h, pixels_to_remove_w, directions_remove_overlap)
 
@@ -187,7 +192,7 @@ def build_voxel_clusters(args):
     filtered_clusters_props = filter_size_clusters(all_clusters_props, cluster_size_threshold)
 
     if not filtered_clusters_props:
-        no_intensity = '\t'.join('-1' for _ in range(image.shape[-3]))
+        no_intensity = '\t'.join('-1' for _ in range(num_channels))
         return f"{img_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
     
     cluster_objects = list()
@@ -232,10 +237,11 @@ def main(z_stack_image_dir, channel_markers, channel_threshold_conditions, clust
         header = (f"Image\tVolume\tX\tY\tZ\t{channel_cols}\n")
         voxel_cluster_out.write(header)
         
-        with Pool(processes=num_processers) as pool:
+        with Pool(processes=num_processers, maxtasksperchild=1) as pool:
 
             args_iter = zip(
                 z_stack_images_path,
+                repeat(len(channel_markers)),
                 all_directions_remove_overlap,
                 repeat(image_overlap),
                 repeat(sliced_channel_thresholds),
@@ -243,8 +249,8 @@ def main(z_stack_image_dir, channel_markers, channel_threshold_conditions, clust
             )
 
             for voxel_cluster_info in tqdm(pool.imap(build_voxel_clusters,
-                            args_iter), total=len(z_stack_images_path)):
-
+                            args_iter, chunksize=1), total=len(z_stack_images_path)):
+            
                 voxel_cluster_out.write(voxel_cluster_info)
 
 
