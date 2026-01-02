@@ -1,6 +1,7 @@
 import csv
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import tifffile as tiff
@@ -11,7 +12,7 @@ from utils import read_tiff_image
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_corrected
 
 
-VOXEL_CLUSTERS_FILE = "Joao_repository/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/voxel_clusters_size_over5_channel1_greater_equal_500.tsv"
+VOXEL_CLUSTERS_FILE = "Joao_repository/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/voxel_clusters_size_over5_SYBRGold_greater_equal_500.tsv"
 BINDOWN_IMAGE_FILE = "M:/Joao/5xbindown_stitched/stitched_01_bin5x.tif"
 
 TILE_HEIGHT = 2304
@@ -22,7 +23,7 @@ BINDOWN_BY = 5
 
 MAXIMUM_DISPLAYED_VALUE = 400
 
-ALLOW_RANGE = True
+ALLOW_RANGE = True # Range will be applied only on the sybrgold channel using clusters with a dapi mean intensity under 250
 RANGE_CATEGORIES = [500, 800, 1000] # e.g 500,800,1000 -> [500, 800[ ; [800, 1000[ ; [1000, 1000+[
 
 @dataclass
@@ -48,7 +49,7 @@ class Cluster:
         rescaled_bindown_x = bindown_x_centroid + bindown_tile_width
         rescaled_bindown_y = bindown_y_centroid + bindown_tile_height
 
-        return rescaled_bindown_x, rescaled_bindown_y
+        return rescaled_bindown_x, rescaled_bindown_y, self.Range_Categorie
         
 
 def obtain_range_limits(range_categories):
@@ -73,23 +74,23 @@ def read_cluster_data(file_path, allow_range, range_limits):
             tile_name = rows["Image"]
 
             if allow_range:
-                for idx, min_max_range in enumerate(range(len(range_limits))):
 
-                    print(min_max_range)
-                    
-                    sybr_gold_mean_intensity = rows["SYBRGold_Summed_Intensity"]
-                    dapi_mean_intensity = rows["DAPI_Summed_Intensity"]
+                sybr_gold_mean_intensity = float(rows["SYBRGold_Mean_Intensity"])
+                dapi_mean_intensity = float(rows["DAPI_Mean_Intensity"])
+
+                for idx, min_max_range in enumerate(range_limits):
+                
                     min_intensity, max_intensity = min_max_range
-                    
-                    if (min_intensity >= sybr_gold_mean_intensity > max_intensity and 
-                        dapi_mean_intensity <= 250):
-                        cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]), idx + 1)
-                    
+                    if dapi_mean_intensity <= 250:
+                        if min_intensity <= sybr_gold_mean_intensity < max_intensity: 
+                            cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]), idx + 1)
+
                     else:
                         cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]))
-
- 
-            cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]), idx)
+                        break
+            
+            else:
+                cluster_pos = Cluster(float(rows["X"]), float(rows["Y"]))
 
             cluster_data[tile_name].append(cluster_pos)
 
@@ -109,6 +110,7 @@ def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, til
         for cluster_pos in clusters_positions:
 
             if cluster_pos == Cluster(-1, -1, 65535):
+                print(tile_pos, cluster_pos)
                 break
 
             rescaled_pos = cluster_pos.bindowned_rescaled_centroid_pos(tile_column,
@@ -124,7 +126,7 @@ def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, til
     return bindowned_cluster_positions
 
 
-def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_positions, maximum_displayed_value):
+def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_positions, maximum_displayed_value, out_path):
     
     bindown_image = bindown_image * 255 / maximum_displayed_value
 
@@ -140,7 +142,7 @@ def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_positio
 
     plt.tight_layout()
     plt.savefig(
-        f"Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Plots/SYBRGold_above_500_cluster_pos_in_bindown5x.png",
+        f"Joao_repository/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/Plots/SYBRGold_above_500_cluster_pos_in_bindown5x_with_ranges.png",
         dpi=300,
         bbox_inches="tight",
     )
@@ -160,7 +162,7 @@ def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_position
 
     for cluster_pos in cluster_positions:
 
-        x, y = cluster_pos
+        x, y, range_category = cluster_pos
         
         bbox = draw.textbbox((0, 0), text, font=font)
 
@@ -170,20 +172,21 @@ def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_position
         draw.text(
             (int(x - text_w / 2), int(y - text_h / 2)),
             text,
-            fill=65535,
+            fill=range_category,
             font=font
         )
 
-    tiff.imwrite(f"Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Plots/SYBRGold_above_500_cluster_pos_in_bindown5x.tiff", np.array(img))
+    tiff.imwrite(f"Joao_repository/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/Plots/SYBRGold_above_500_cluster_pos_in_bindown5x_with_ranges.tiff", np.array(img))
 
 
 def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value, allow_range, range_categories):
     
+    odirname = Path(odirname)
+    odirname.mkdir(parents= True, exist_ok=True)
+
     range_limits = obtain_range_limits(range_categories)
 
     cluster_pos_data = read_cluster_data(voxel_clusters_file, allow_range, range_limits)
-    print(cluster_pos_data)
-    return
 
     all_tiles_positions = get_all_tiles_position_corrected(cluster_pos_data.keys())
 
@@ -193,7 +196,7 @@ def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_
 
     bindown_image = read_tiff_image(bindown_image_file).astype(float)
 
-    plot_bindown_with_voxel_clusters_png_overview(bindown_image, resized_cluster_pos, maximum_displayed_value)
+    plot_bindown_with_voxel_clusters_png_overview(bindown_image, resized_cluster_pos, maximum_displayed_value, "")
 
     plot_bindown_with_voxel_clusters_tiff_overview(bindown_image.shape, resized_cluster_pos, "")
 
