@@ -15,8 +15,8 @@ from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove
 Z_STACK_IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1/"
 ODIRNAME = "Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/"
 
-CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
-CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=500"
+CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
+CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=2000"
 CLUSTER_SIZE_THRESHOLD = 5
 
 IMAGE_OVERLAP = 5
@@ -74,9 +74,9 @@ class Cluster_3D:
 
         intensities = self.get_channel_intensity()
 
-        sum_intensities = np.mean(intensities, axis=0)
+        mean_intensities = np.mean(intensities, axis=0)
 
-        return sum_intensities.astype(str)
+        return mean_intensities.astype(str)
     
 
 def build_out_file_sufix(threshold_conditions):
