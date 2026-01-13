@@ -12,10 +12,10 @@ from compute_direction_and_cut_overlap import get_all_tiles_directions_to_remove
 
 
 IMAGE_DIR = "U:/RG Bumann/ScientificData/Group/DataTansfer/New_mTB_Data_4Channel/MAX"
-ODIRNAME = "Results/Test/Voxel_Analysis/"
+ODIRNAME = "Results/Test/Pixel_Analysis/"
 
 CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,CD68AL647"
-CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=2000"
+CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=500,SYBRGold<=800"
 CLUSTER_SIZE_THRESHOLD = 5
 
 IMAGE_OVERLAP = 5
@@ -99,8 +99,8 @@ def build_cluster_report_header(channel_markers: list[str]):
         - Constructs a list of channel-specific column names (e.g., Channel_1_Summed_Intensity, ...)
         and combines them with fixed metadata columns (Image, Area, X_position, Y_position).
     """
-    ch_cols = [f"{channel_name}_Summed_Intensity" for channel_name in channel_markers]
-    return "Image\tArea\tX_position\tY_position\t" + "\t".join(ch_cols) + "\n"
+    ch_cols = [f"{channel_name}_Mean_Intensity" for channel_name in channel_markers]
+    return "Image\tArea\tX\tY\t" + "\t".join(ch_cols) + "\n"
 
 
 def build_pixel_report_header(channel_markers: list[str]):
@@ -118,7 +118,7 @@ def build_pixel_report_header(channel_markers: list[str]):
     
     ch_cols = [f"{marker}_Intensity" for marker in channel_markers]
     
-    return "Image\tX_position\tY_position\t" + "\t".join(ch_cols) + "\n"
+    return "Image\tX\tY\t" + "\t".join(ch_cols) + "\n"
 
 
 def build_out_file_sufix(threshold_conditions):
@@ -275,7 +275,7 @@ def main(image_dir, channel_markers, channel_threshold_conditions, cluster_size_
 
     channel_markers = channel_markers.split(",")
 
-    images_path = get_images_path(image_dir, ".tif", ".tiff")[:1] #remove it after
+    images_path = get_images_path(image_dir, ".tif", ".tiff")
 
     all_directions_remove_overlap = get_all_tiles_directions_to_remove_overlap(images_path)
 
