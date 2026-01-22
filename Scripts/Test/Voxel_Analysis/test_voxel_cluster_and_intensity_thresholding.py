@@ -11,17 +11,17 @@ from Voxel_Analysis.voxel_cluster_and_intensity_thresholding import (build_out_f
 class TestBuildOutFileSufix:
     def test_build_out_file_sufix_with_correct_condition(self, threshold_conditions):
 
-        expected_result = ("channel1_greater_200_channel2_less_equal_100"
-                           "_channel3_greater_equal_100_channel4_less_600")
-        
+        expected_result = ("SYBRGold_greater_200_DAPI_less_equal_100"
+                           "_CD68AL555_greater_equal_100_LAMAL647_less_600")
+
         result = build_out_file_sufix(threshold_conditions[0])
 
         assert result == expected_result
 
     def test_build_out_file_sufix_with_incorrect_condition(self, threshold_conditions):
 
-        expected_result = ("channel1_greater_200_channel2?100"
-                           "_channel3=100_channel4&600")
+        expected_result = ("SYBRGold_greater_200_DAPI?100"
+                           "_CD68AL555=100_LAMAL647&600")
         
         result = build_out_file_sufix(threshold_conditions[1])
 
@@ -29,12 +29,12 @@ class TestBuildOutFileSufix:
 
 
 class TestSliceChannelThreshold:
-    def test_slice_channel_threshold_valid_operators(self, threshold_conditions):
+    def test_slice_channel_threshold_valid_operators_no_channel_markers(self, threshold_conditions):
         
-        expected_result = [(0, ">", 200),
-                            (1, "<=", 100),
-                            (2, ">=", 100),
-                            (3, "<", 600)]
+        expected_result = [("SYBRGold", ">", 200),
+                            ("DAPI", "<=", 100),
+                            ("CD68AL555", ">=", 100),
+                            ("LAMAL647", "<", 600)]
         
         result = slice_channel_threshold(threshold_conditions[0])
 
@@ -119,8 +119,8 @@ class TestMultiChannelThresholdMask:
 @pytest.fixture
 def threshold_conditions():
     threshold_conditions_lst = [
-        "1>200,2<=100,3>=100,4<600",
-        "1>200,2?100,3=100,4&600"
+        "SYBRGold>200,DAPI<=100,CD68AL555>=100,LAMAL647<600",
+        "SYBRGold>200,DAPI?100,CD68AL555=100,LAMAL647&600"
     ]
     return threshold_conditions_lst
 
