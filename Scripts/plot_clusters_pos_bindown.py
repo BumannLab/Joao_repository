@@ -9,11 +9,11 @@ from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
 from utils import read_tiff_image, slice_channel_threshold
-from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_corrected
+from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_snake
 
 
-VOXEL_CLUSTERS_FILE = "//biopz-jumbo.storage.p.unibas.ch/BZDB01$/_Members/rodrig0012/Documents/Results/Test/Pixel_Analysis/pixel_clusters_size_over5_SYBRGold_greater_equal_500_SYBRGold_less_equal_800.tsv"
-BINDOWN_IMAGE_FILE = "M:/Joao/5xbindown_stitched/stitched_01_bin5x.tif"
+VOXEL_CLUSTERS_FILE = "/data/joao/Materials/Joao_repository/Results/Old_Destaining/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/SYBRGold1000_Threshold/voxel_clusters_size_over5_SYBRGold_greater_equal_1000.tsv"
+BINDOWN_IMAGE_FILE = "/data/joao/mTBData/LAM1AL647_CD68AL555_SYBRGold_DAPI/5xbindown_stitched/stitched_01_bin5x.tif" # Preferably the sybrgold bindown channel
 
 TILE_HEIGHT = 2304
 TILE_WIDTH = 2304
@@ -21,12 +21,12 @@ TILE_OVERLAP = 5
 
 BINDOWN_BY = 5
 
-MAXIMUM_DISPLAYED_VALUE = 400
+MAXIMUM_DISPLAYED_VALUE = 800
 
-USE_FILTER = True
-DATA_FILTER = "DAPI<=250"
+USE_FILTERS = True
+FILTERS = "DAPI<=250"
 
-ODIRFILENAME = "Joao_repository/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Full_scan/Voxel_Analysis/Plots/SYBRGold_500-800_exclusive_with_DAPI_mean_lt250_bindown5x"
+ODIRFILENAME = "/data/joao/Materials/Joao_repository/Results/Old_Destaining/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/SYBRGold1000_Threshold/DAPI_mean_lt250_SYBRGold_mean_gt1000_bindown5x"
 
 @dataclass
 class Cluster:
@@ -72,7 +72,10 @@ def read_cluster_data(file_path, use_filter, filters = None):
             elif operator == "<=":
                 pass_threshold = value <= threshold
             elif operator == "<":
-                pass_threshold = value
+                pass_threshold = value < threshold
+
+            if not pass_threshold:
+                break
         
         return pass_threshold
 
@@ -84,17 +87,13 @@ def read_cluster_data(file_path, use_filter, filters = None):
         for rows in reader:
             tile_name = rows["Image"]
 
-            if use_filter:
-                pass_filter = filter_data(rows, filters)
+            _ = cluster_data[tile_name]
 
-                if pass_filter:
-                    cluster = Cluster(float(rows["X"]), float(rows["Y"]))
-                else:
+            if use_filter:
+                if not filter_data(rows, filters):
                     continue
 
-            else:
-                cluster = Cluster(float(rows["X"]), float(rows["Y"]))
-
+            cluster = Cluster(float(rows["X"]), float(rows["Y"]))
             cluster_data[tile_name].append(cluster)
 
     return cluster_data
@@ -122,18 +121,18 @@ def resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, til
                                                         pixels_to_remove_h,
                                                         pixels_to_remove_w,
                                                         bindown_by)
-
+            
             resize_filtered_cluster_positions.append(cluster)
 
     return resize_filtered_cluster_positions
 
 
-def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_positions, maximum_displayed_value, odirfilename):
+def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_data, maximum_displayed_value, odirfilename):
     
     bindown_image = bindown_image * 255 / maximum_displayed_value
 
-    datax = [positions[0] for positions in cluster_positions]
-    datay = [positions[1] for positions in cluster_positions]
+    datax = [cluster.X_centroid for cluster in cluster_data]
+    datay = [cluster.Y_centroid for cluster in cluster_data]
 
     plt.figure(figsize=(16, 8), frameon=False)
 
@@ -162,15 +161,15 @@ def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_data, od
 
         text = "x"
 
-        for cluster_pos in cluster_data:
-            
-            x, y = cluster_pos
-            
-            bbox = draw.textbbox((0, 0), text, font=font)
+        bbox = draw.textbbox((0, 0), text, font=font)
 
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
 
+        for cluster in cluster_data:
+            
+            x, y = cluster.X_centroid, cluster.Y_centroid
+            
             draw.text(
                 (int(x - text_w / 2), int(y - text_h / 2)),
                 text,
@@ -181,27 +180,32 @@ def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_data, od
         tiff.imwrite(f"{odirfilename}.tiff", np.array(img))
 
 
-def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value, odirfilename, use_filter, data_filter = None):
+def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value, odirfilename, use_filters, filters = None):
     
     odirname = Path(odirfilename).parent
     odirname.mkdir(parents= True, exist_ok=True)
     
-    if use_filter:
-        filters = slice_channel_threshold(data_filter)
+    if use_filters:
+        filters = slice_channel_threshold(filters)
 
-    cluster_data = read_cluster_data(voxel_clusters_file, use_filter, filters) 
+    cluster_data = read_cluster_data(voxel_clusters_file, use_filters, filters) 
 
-    all_tiles_positions = get_all_tiles_position_corrected(cluster_data.keys())
+    all_tiles_positions = get_all_tiles_position_snake(cluster_data.keys())
 
     pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(tile_overlap, tile_height, tile_width, rounding_mode="nearest")
 
-    cluster_data = resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by)
+    resized_cluster_data = resize_cluster_positions(cluster_data, all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by)
+
+    print(len(resized_cluster_data))
     
     bindown_image = read_tiff_image(bindown_image_file).astype(float)
 
-    plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_data, maximum_displayed_value, odirfilename)
+    plot_bindown_with_voxel_clusters_png_overview(bindown_image, resized_cluster_data, maximum_displayed_value, odirfilename)
+    print("png done")
 
-    plot_bindown_with_voxel_clusters_tiff_overview(bindown_image.shape, cluster_data, odirfilename)
+    plot_bindown_with_voxel_clusters_tiff_overview(bindown_image.shape, resized_cluster_data, odirfilename)
+    print("tiff done")
+
 
 
 if __name__ == "__main__":
@@ -213,6 +217,6 @@ if __name__ == "__main__":
          BINDOWN_BY,
          MAXIMUM_DISPLAYED_VALUE,
          ODIRFILENAME,
-         USE_FILTER,
-         DATA_FILTER)
+         USE_FILTERS,
+         FILTERS)
     
