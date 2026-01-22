@@ -23,35 +23,27 @@ def obtain_tile_position(tile_name):
     return int(column) - 1, convert_row_numerical(row)
 
 
-def get_all_tiles_position_corrected(tile_names):
-    all_tiles_positions = list()
+def get_all_tiles_position_snake(tile_names):
 
-    row_count = 0
-    column_count = 0
+    raw = [obtain_tile_position(name) for name in tile_names]
 
-    previous_row = 0
-    previous_column = 0
+    rows = sorted({row for _, row in raw})
+    cols = sorted({col for col, _ in raw})
     
-    for name in tile_names:
-        column, row = obtain_tile_position(name)
-
-        if row != previous_row:
-            row_count += 1
-
-        if column > previous_column:
-            column_count += 1
+    out = []
+    for row in range(len(rows)):
         
-        elif column < previous_column:
-            column_count -= 1
+        if row % 2 == 0:
+            for col in range(len(cols)):
+                out.append((col, row))
 
-        all_tiles_positions.append((column_count, row_count))
-
-        previous_column = column
-        previous_row = row
-
-    return all_tiles_positions
-
+        else:
+            for col in range(len(cols) - 1, -1, -1):
+                out.append((col, row))
         
+    return out
+
+
 def obtain_direction_to_remove_overlap(tile_pos, last_col):
 
     tile_col, tile_row = tile_pos
@@ -75,7 +67,7 @@ def obtain_direction_to_remove_overlap(tile_pos, last_col):
     
 
 def get_all_tiles_directions_to_remove_overlap(tile_names: list[str]):
-    all_tiles_positions = get_all_tiles_position_corrected(tile_names)
+    all_tiles_positions = get_all_tiles_position_snake(tile_names)
 
     last_col = max(col for col, _ in all_tiles_positions)
 
