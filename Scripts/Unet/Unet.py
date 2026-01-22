@@ -1,5 +1,5 @@
 from torch import nn
-from Unet_core import Encoder, Decoder, ConvolutionBlock
+from Scripts.Unet.Unet_core import Encoder, Decoder, ConvolutionBlock
 
 class Unet(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -22,7 +22,7 @@ class Unet(nn.Module):
     def forward(self, x):
         x, skip_1 = self.enc_1(x)
         x, skip_2 = self.enc_2(x)
-        x, skip_3 = self.enc_3(x)
+        x, skip_3 = self.enc_3(x)        
         x, skip_4 = self.enc_4(x)
 
         x = self.conv(x)
