@@ -1,7 +1,16 @@
 /Images/
 /Results/
-/Scripts/Test/
 notes.txt
 Data/
 mTB_gallery.pptx
 /Scripts/Unet/__pycache__
+global_vars.md
+*.pyc
+/.venv/
+.pytest_cache/
+.venv/
+Dataset/
+HENG_DATA/
+mTB_segmentation/
+NN_Dataset/
+Saskia/

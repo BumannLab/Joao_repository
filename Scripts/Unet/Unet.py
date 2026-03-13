@@ -22,7 +22,7 @@ class Unet(nn.Module):
     def forward(self, x):
         x, skip_1 = self.enc_1(x)
         x, skip_2 = self.enc_2(x)
-        x, skip_3 = self.enc_3(x)
+        x, skip_3 = self.enc_3(x)        
         x, skip_4 = self.enc_4(x)
 
         x = self.conv(x)

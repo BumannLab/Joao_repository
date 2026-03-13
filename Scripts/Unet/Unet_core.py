@@ -4,9 +4,11 @@ from torch import nn
 # Important: 
 # Default Unet uses padding = "valid", however to be able to use this padding size only images of size
 # superior to 256 can run through the network.
-# For now to allow images of 128x128 and 64x64 to train, padding = "same" will be used.
-# Which is the same as the Unet used by Jiagui
-# Future task TODO: test performance with bigger images using padding = "valid"
+# For now to allow images of 128x128 and 64x64 to train, padding = "same" will be used. Also because this 
+# allows for the result of the unet be the same size as the input different from the Unet defined in the first article
+# TODO: Check if all the core blocks are right, yes for now
+# TODO: Check if the end of unet should be sigmoid or softmax? softmax
+# TODO: in_channels -> number of channels in image
 
 class ConvolutionBlock(nn.Module):
     # TODO: Add batch normalization?
@@ -48,18 +50,6 @@ class Decoder(ConvolutionBlock):
 
     def forward(self, x, skip): 
         x = self.t_convolution_operation(x)
-        resized_skip = self.resize_skip(x, skip)
-        x_plus_skip = torch.cat((x, resized_skip), dim=1)
+        x_plus_skip = torch.cat([x, skip], dim=1)
         x_plus_skip = super().forward(x_plus_skip)
         return x_plus_skip
-    
-    def resize_skip(self, up_sample: torch.Tensor, skip: torch.Tensor): 
-        # TODO: Can also use interpolate instead but it does not cut
-        _, _, target_height, target_width = up_sample.shape
-        _, _, height, width = skip.shape
-
-        start_x = (width - target_width) // 2
-        start_y = (height - target_height) // 2
-        resized_skip = skip[:, :, start_y:start_y + target_height, start_x:start_x + target_width]
-
-        return resized_skip

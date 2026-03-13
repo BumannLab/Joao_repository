@@ -8,16 +8,11 @@ import matplotlib.pyplot as plt
 
 
 IN_FNAME = (
-    "Joao_repository/Results/Pixel_Intensity_Thresholding/pixels_intensity_over1000.tsv"
+    "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis/pixels_intensity_over1000.tsv"
+    "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis/pixels_intensity_over1000.tsv"
 )
-ODIRNAME = "Joao_repository/Results/Pixel_Intensity_Thresholding/Images/"
+ODIRNAME = "Joao_repository/New_Results/CD68AL555_SYBRGold_DAPI_CD68AL647/Pixel_Analysis/Plots/"
 BINS = 100
-CHANNEL_MAP = {
-    "Channel_1": "AL-555",
-    "Channel_2": "SYBR_GOLD",
-    "Channel_3": "DAPI",
-    "Channel_4": "AL-647",
-}
 
 
 def get_header(file: Path):
@@ -27,7 +22,7 @@ def get_header(file: Path):
 
 
 def get_columns_to_plot(all_columns: list[str]):
-    columns_to_plot = [col for col in all_columns if re.search("/", col)]
+    columns_to_plot = [col for col in all_columns if "/" in col]
     return columns_to_plot
 
 
@@ -40,14 +35,7 @@ def obtain_bin_info(num_bins):
     return edges, centers, widths
 
 
-def rename_columns(old_key, old_new_keys):
-    new_key = []
-    for channel in old_key.split("/"):
-        new_key.append(old_new_keys[channel])
-    return "/".join(new_key)
-
-
-def plot_histogram(odirname, counts, columns_to_plot, edges, channel_map):
+def plot_histogram(odirname, counts, columns_to_plot, centers):
     plt.figure(figsize=(12, 8))
 
     colors = [
@@ -64,19 +52,19 @@ def plot_histogram(odirname, counts, columns_to_plot, edges, channel_map):
 
     for c, color in zip(columns_to_plot, colors):
 
-        # plt.fill_between(centers, counts[c], step="mid", alpha=0.3, color=color)
-        # plt.step(centers, counts[c], where="mid", color=color, linewidth=2, label=rename_columns(c, channel_map))
+        plt.fill_between(centers, counts[c], step="mid", alpha=0.3, color=color)
+        plt.step(centers, counts[c], where="mid", color=color, linewidth=2, label = c)
 
-        plt.hist(
-            edges[:-1],
-            edges,
-            weights=counts[c],
-            label=rename_columns(c, channel_map),
-            color=color,
-            alpha=0.5,
-            edgecolor="black",
-            linewidth=0.7,
-        )
+        # plt.hist(
+        #     edges[:-1],
+        #     edges,
+        #     weights=counts[c],
+        #     label=rename_columns(c, channel_map),
+        #     color=color,
+        #     alpha=0.5,
+        #     edgecolor="black",
+        #     linewidth=0.7,
+        # )
 
     plt.xlabel("Ratio", fontsize=12)
     plt.ylabel("Count", fontsize=12)
@@ -84,13 +72,17 @@ def plot_histogram(odirname, counts, columns_to_plot, edges, channel_map):
     plt.grid(alpha=0.2, linestyle="--")
     plt.tight_layout()
     plt.savefig(
-        f"{odirname}/Ratios_distribution_histogram.pdf",
+        f"{odirname}/Ratios_distribution_histogram_step.pdf",
         dpi=300,
         bbox_inches="tight",
     )
 
 
-def main(input_file, odirname, bins, channel_map):
+def main(input_file, odirname, bins):
+
+    odirname = Path(odirname)
+    odirname.mkdir(parents=True, exist_ok=True)
+
     chunk_size = 50_000_000
 
     header = get_header(input_file)
@@ -103,7 +95,7 @@ def main(input_file, odirname, bins, channel_map):
         sep="\t",
         usecols=columns_to_plot,
         dtype="float32",
-        chunksize=chunk_size,
+        chunksize=chunk_size
     )
 
     counts = {c: np.zeros(bins, dtype=np.int32) for c in columns_to_plot}
@@ -114,10 +106,10 @@ def main(input_file, odirname, bins, channel_map):
             bin_distribution, _ = np.histogram(column, bins=edges)
             counts[col] += bin_distribution
 
-    plot_histogram(odirname, counts, columns_to_plot, edges, channel_map)
+    plot_histogram(odirname, counts, columns_to_plot, centers)
 
 
 if __name__ == "__main__":
     start_time = time.time()
-    main(IN_FNAME, ODIRNAME, BINS, CHANNEL_MAP)
+    main(IN_FNAME, ODIRNAME, BINS)
     print(f"Finished in {time.time() - start_time}")
