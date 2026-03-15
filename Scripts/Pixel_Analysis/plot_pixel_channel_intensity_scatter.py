@@ -109,8 +109,9 @@ def main(input_file, odirname, bins, column_of_interest, log_scale):
 
     xedges, yedges = obtain_bin_info(bins, log_scale)
 
-    chunked_df = pd.read_csv(input_file, sep="\t", usecols=columns_to_plot, dtype="int32",
-                        chunksize = chunk_size, nrows=chunk_size * 3)
+    chunked_df = pd.read_csv(input_file, sep="\t", usecols=columns_to_plot, dtype="float32",
+                        chunksize=chunk_size #, nrows=chunk_size
+                        )
 
     counts = {"+".join(combn): np.zeros((bins, bins), dtype=np.float32) for combn in cols_combn}
  

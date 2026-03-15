@@ -7,3 +7,10 @@ mTB_gallery.pptx
 global_vars.md
 *.pyc
 /.venv/
+.pytest_cache/
+.venv/
+Dataset/
+HENG_DATA/
+mTB_segmentation/
+NN_Dataset/
+Saskia/
