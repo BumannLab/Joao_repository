@@ -62,9 +62,9 @@ plot_scatter <- function(dataframe, cols_combinations_to_plot, channel_map, odir
       ylab(col2)
     
     filename <- paste0(odirname, "/", 
-                       rename_channel(col1, channel_map), 
+                       col1, 
                        "_vs_", 
-                       rename_channel(col2, channel_map), 
+                       col2, 
                        "_scatter_plot_test.png")
     
     ggsave(filename, plot, width = 10, height = 10)
