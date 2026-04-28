@@ -7,13 +7,16 @@ import tifffile as tiff
 import numpy as np
 from skimage.measure import label, regionprops
 
-from utils import get_images_path, read_image, AXES
-from NeuralNetworkSegmentation.models import UNet
+from Scripts.utils import get_images_path, read_image, AXES
+from NeuralNetworkSegmentation.models.unet import UNet
 
-IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1"
+IMAGE_DIR = "/home/joao_riri/Documents/mock_data/mtb_p1_3d/"
 CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
 CHANNELS_TO_USE = [0]
 CLUSTER_SIZE_THRESHOLD = 5
+
+WINDOW_SIZE = (21, 144, 144)
+WINDOW_STRIDE = (21, 72, 72)
 
 TORCH_MODEL_PATH = "/data/joao/Materials/Joao_repository/mTB_segmentation/center_crop_no_translation/model.pt"
 NUM_BLOCKS = 3
@@ -164,17 +167,17 @@ def pad_image(image: np.ndarray, num_blocks: int) -> np.ndarray:
     width_remainder = width % axis_multiple
 
     if all([remainder == 0 for remainder in [depth_remainder, height_remainder, width_remainder]]):
-        return image
+        return image, ((0, 0), (0, 0), (0, 0), (0, 0))
 
-    depth_pad_total = axis_multiple - depth_remainder 
+    depth_pad_total = axis_multiple - depth_remainder if depth_remainder != 0 else 0
     depth_pad_back = round(depth_pad_total / 2)
     depth_pad_front = depth_pad_total - depth_pad_back  
 
-    height_pad_total = axis_multiple - height_remainder
+    height_pad_total = axis_multiple - height_remainder if height_remainder != 0 else 0
     height_pad_top = round(height_pad_total / 2)
     height_pad_bottom = height_pad_total - height_pad_top
     
-    width_pad_total = axis_multiple - width_remainder
+    width_pad_total = axis_multiple - width_remainder if width_remainder != 0 else 0
     width_pad_left = round(width_pad_total / 2)
     width_pad_right = width_pad_total - width_pad_left 
 
@@ -191,8 +194,6 @@ def pad_image(image: np.ndarray, num_blocks: int) -> np.ndarray:
 
 
 def unpad_image(image: np.ndarray, padding) -> np.ndarray:
-
-    image = np.transpose(image, (1, 0, 2, 3))
 
     depth_pad_front, depth_pad_back = padding[0]
     height_pad_top, height_pad_bottom = padding[2]
@@ -219,7 +220,7 @@ def apply_model(
     device
 ) -> np.ndarray:
 
-    _, depth, height, width = image.shape
+    depth, _, height, width = image.shape
 
     segmented_image = np.zeros([*image.shape], dtype=np.uint16)
 
@@ -247,10 +248,11 @@ def apply_model(
                 ]
 
                 padded_window, padding = pad_image(window, num_blocks)
-
+                
                 with torch.no_grad():
                     window_pred = model(process_image(padded_window, device))
                     window_pred = torch.argmax(window_pred, dim=1)
+                    window_pred = np.transpose(window_pred, (1, 0, 2, 3)) # Convert from CxDxHxW into DxCxHxW
                 
                 unpadded_window_pred = unpad_image(window_pred.cpu().numpy(), padding)
 
@@ -277,7 +279,7 @@ def apply_model(
                     height_crop.global_start:height_crop.global_stop,
                     width_crop.global_start:width_crop.global_stop,
                 ] = unpadded_window_pred
-
+    
     segmented_image = np.transpose(segmented_image, (1, 0, 2, 3))
 
     return segmented_image
@@ -312,9 +314,8 @@ def build_cluster_report(cluster: BacteriaCluster) -> str:
     return file_content + "\n"
 
 
-def save_prediction(image_og: np.ndarray, pred: np.ndarray, name: str, num_blocks, odirname: Path) -> None:
-    image_og = layout_3d(image_og, num_blocks)
-    image_og = np.transpose(image_og, (1, 0, 2, 3))
+def save_prediction(image_og: np.ndarray, pred: np.ndarray, name: str, odirname: Path) -> None:
+
     odirname = odirname / "pred_masks"
     odirname.mkdir(parents=True, exist_ok=True)
 
@@ -334,6 +335,8 @@ def main(
         channel_markers,
         channels_to_use,
         cluster_size_threshold,
+        window_size,
+        window_stride,
         save_pred,
         torch_model,
         num_blocks,
@@ -363,30 +366,28 @@ def main(
 
             image = load_channels_image(image_og, channels_to_use)
 
-            pred = apply_model(image, model, num_blocks, (24, 576, 576), (24, 288, 288), device)
+            pred = apply_model(image, model, num_blocks, window_size, window_stride, device)
 
-            print(pred.shape)
+            predicted_clusters = get_prediction_clusters(pred, cluster_size_threshold)
 
-            # predicted_clusters = get_prediction_clusters(pred, cluster_size_threshold)
+            if not predicted_clusters:
+                no_intensity = "\t".join("-1" for _ in range(image_og.shape[0]))
+                cluster_info = f"{image_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
+                mtb_pos_out.write(cluster_info)
+            else:
+                for cluster in predicted_clusters:
+                    cluster_obj = BacteriaCluster(
+                        image_name,
+                        cluster.area,
+                        round(cluster.centroid[0], 1),
+                        round(cluster.centroid[1], 1),
+                        round(cluster.centroid[2], 1),
+                        cluster.coords,
+                    )
 
-            # if not predicted_clusters:
-            #     no_intensity = "\t".join("-1" for _ in range(image_og.shape[0]))
-            #     cluster_info = f"{image_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
-            #     mtb_pos_out.write(cluster_info)
-            # else:
-            #     for cluster in predicted_clusters:
-            #         cluster_obj = BacteriaCluster(
-            #             image_name,
-            #             cluster.area,
-            #             round(cluster.centroid[0], 1),
-            #             round(cluster.centroid[1], 1),
-            #             round(cluster.centroid[2], 1),
-            #             cluster.coords,
-            #         )
-
-            #         cluster_obj.cluster_mean_intensities(image_og)
-            #         cluster_info = build_cluster_report(cluster_obj)
-            #         mtb_pos_out.write(cluster_info)
+                    cluster_obj.cluster_mean_intensities(image_og)
+                    cluster_info = build_cluster_report(cluster_obj)
+                    mtb_pos_out.write(cluster_info)
 
             if save_pred:
                 save_prediction(image_og, pred, image_name, num_blocks, odirname)
@@ -397,6 +398,8 @@ if __name__ == "__main__":
         CHANNEL_MARKERS,
         CHANNELS_TO_USE,
         CLUSTER_SIZE_THRESHOLD,
+        WINDOW_SIZE,
+        WINDOW_STRIDE,
         SAVE_MASKS,
         TORCH_MODEL_PATH,
         NUM_BLOCKS,
