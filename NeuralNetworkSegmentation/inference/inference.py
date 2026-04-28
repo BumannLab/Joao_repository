@@ -7,10 +7,10 @@ import tifffile as tiff
 import numpy as np
 from skimage.measure import label, regionprops
 
-from Scripts.utils import get_images_path, read_image, AXES
+from utils import get_images_path, read_image, AXES
 from NeuralNetworkSegmentation.models.unet import UNet
 
-IMAGE_DIR = "/home/joao_riri/Documents/mock_data/mtb_p1_3d/"
+IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1"
 CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
 CHANNELS_TO_USE = [0]
 CLUSTER_SIZE_THRESHOLD = 5
@@ -252,7 +252,7 @@ def apply_model(
                 with torch.no_grad():
                     window_pred = model(process_image(padded_window, device))
                     window_pred = torch.argmax(window_pred, dim=1)
-                    window_pred = np.transpose(window_pred, (1, 0, 2, 3)) # Convert from CxDxHxW into DxCxHxW
+                    window_pred = torch.permute(window_pred, (1, 0, 2, 3)) # Convert from CxDxHxW into DxCxHxW
                 
                 unpadded_window_pred = unpad_image(window_pred.cpu().numpy(), padding)
 
@@ -280,8 +280,6 @@ def apply_model(
                     width_crop.global_start:width_crop.global_stop,
                 ] = unpadded_window_pred
     
-    segmented_image = np.transpose(segmented_image, (1, 0, 2, 3))
-
     return segmented_image
 
 
@@ -347,7 +345,7 @@ def main(
     odirname = Path(odirname)
     odirname.mkdir(parents=True, exist_ok=True)
 
-    images_path = get_images_path(image_dir)
+    images_path = get_images_path(image_dir)[210:]
 
     model = UNet(in_channels=len(channels_to_use), out_channels=2, channels=32, num_blocks=num_blocks, use_batchnorm=True, is_3d=True)
     model.to(device)
@@ -390,7 +388,7 @@ def main(
                     mtb_pos_out.write(cluster_info)
 
             if save_pred:
-                save_prediction(image_og, pred, image_name, num_blocks, odirname)
+                save_prediction(image_og, pred, image_name, odirname)
 
 if __name__ == "__main__":
     main(
