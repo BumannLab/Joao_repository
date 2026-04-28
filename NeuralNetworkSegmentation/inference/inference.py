@@ -8,12 +8,9 @@ import numpy as np
 from skimage.measure import label, regionprops
 
 from utils import get_images_path, read_image, AXES
-from overlap_cropping import OverlapCropper, AxisCrop
-from NeuralNetworkSegmentation.models.unet3d import UNet3D
-from NeuralNetworkSegmentation.models.unet2d import UNet2D
+from NeuralNetworkSegmentation.models import UNet
 
 IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1"
-IS_3D = True
 CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
 CHANNELS_TO_USE = [0]
 CLUSTER_SIZE_THRESHOLD = 5
@@ -98,16 +95,8 @@ def pad_3d_image_depth(image: np.ndarray, num_blocks: int) -> np.ndarray:
     pad_bottom = pad_voxels - pad_top
     pad_width = [(0, 0)] * image.ndim
     pad_width[0] = (pad_top, pad_bottom)
-    return np.pad(image, pad_width, mode="constant", constant_values=0)
-
-
-def layout_3d(image, num_blocks):
     
-    image = pad_3d_image_depth(image, num_blocks)
-
-    image = np.transpose(image, (1, 0, 2, 3))
-
-    return image
+    return np.pad(image, pad_width, mode="constant", constant_values=0)
 
 
 def get_window_starts(axis_size: int, window_size: int, stride: int) -> list[int]:
@@ -115,6 +104,9 @@ def get_window_starts(axis_size: int, window_size: int, stride: int) -> list[int
         return [0]
 
     starts = list(range(0, axis_size - window_size + 1, stride))
+
+    if starts[-1] + window_size < axis_size:
+        starts.append(axis_size - window_size)
 
     return starts
 
@@ -155,9 +147,67 @@ def compute_window_crop(starts, window_size, image_shape, overlap):
 
 
 def process_image(image: np.ndarray, device) -> torch.Tensor:
+    
     image = torch.from_numpy(image / 65535).to(torch.float32).to(device)
+    image = torch.permute(image, (1, 0, 2, 3))
 
     return image.unsqueeze(0)
+
+
+def pad_image(image: np.ndarray, num_blocks: int) -> np.ndarray:
+    axis_multiple = 2 ** num_blocks
+    
+    depth, _, height, width = image.shape
+    
+    depth_remainder = depth % axis_multiple
+    height_remainder = height % axis_multiple
+    width_remainder = width % axis_multiple
+
+    if all([remainder == 0 for remainder in [depth_remainder, height_remainder, width_remainder]]):
+        return image
+
+    depth_pad_total = axis_multiple - depth_remainder 
+    depth_pad_back = round(depth_pad_total / 2)
+    depth_pad_front = depth_pad_total - depth_pad_back  
+
+    height_pad_total = axis_multiple - height_remainder
+    height_pad_top = round(height_pad_total / 2)
+    height_pad_bottom = height_pad_total - height_pad_top
+    
+    width_pad_total = axis_multiple - width_remainder
+    width_pad_left = round(width_pad_total / 2)
+    width_pad_right = width_pad_total - width_pad_left 
+
+    padding = (
+        (depth_pad_front, depth_pad_back),
+        (0, 0),
+        (height_pad_top, height_pad_bottom),
+        (width_pad_left, width_pad_right)
+    )
+
+    padded_image = np.pad(image, padding)
+
+    return padded_image, padding
+
+
+def unpad_image(image: np.ndarray, padding) -> np.ndarray:
+
+    image = np.transpose(image, (1, 0, 2, 3))
+
+    depth_pad_front, depth_pad_back = padding[0]
+    height_pad_top, height_pad_bottom = padding[2]
+    width_pad_left, width_pad_right = padding[3]
+
+    depth_start = depth_pad_front
+    depth_end = image.shape[0] - depth_pad_back
+    
+    height_start = height_pad_top
+    height_end = image.shape[2] - height_pad_bottom
+    
+    width_start = width_pad_left
+    width_end = image.shape[3] - width_pad_right
+
+    return image[depth_start:depth_end, :, height_start:height_end, width_start:width_end]
 
 
 def apply_model(
@@ -196,10 +246,14 @@ def apply_model(
                     width_start:width_end,
                 ]
 
+                padded_window, padding = pad_image(window, num_blocks)
+
                 with torch.no_grad():
-                    window_pred = model(process_image(window, device))
+                    window_pred = model(process_image(padded_window, device))
                     window_pred = torch.argmax(window_pred, dim=1)
                 
+                unpadded_window_pred = unpad_image(window_pred.cpu().numpy(), padding)
+
                 starts = (depth_start, height_start, width_start)
                 overlap = tuple(
                     size - step for size, step in zip(window_size, window_stride)
@@ -209,20 +263,20 @@ def apply_model(
                 
                 depth_crop, height_crop, width_crop = crops
                 
-                window_pred =  window_pred[
+                unpadded_window_pred =  unpadded_window_pred[
                     :,
                     depth_crop.local_start:depth_crop.local_stop,
                     height_crop.local_start:height_crop.local_stop,
                     width_crop.local_start:width_crop.local_stop,
-                ].cpu().numpy().astype(np.uint16)
-                window_pred[window_pred > 0] = 65535
+                ].astype(np.uint16)
+                unpadded_window_pred[unpadded_window_pred > 0] = 65535
 
                 segmented_image[
                     :,
                     depth_crop.global_start:depth_crop.global_stop,
                     height_crop.global_start:height_crop.global_stop,
                     width_crop.global_start:width_crop.global_stop,
-                ] = window_pred
+                ] = unpadded_window_pred
 
     segmented_image = np.transpose(segmented_image, (1, 0, 2, 3))
 
@@ -275,10 +329,8 @@ def save_prediction(image_og: np.ndarray, pred: np.ndarray, name: str, num_block
     )
 
 
-
 def main(
         image_dir,
-        is_3d,
         channel_markers,
         channels_to_use,
         cluster_size_threshold,
@@ -288,13 +340,13 @@ def main(
         odirname,
         device
     ):
+    
     odirname = Path(odirname)
     odirname.mkdir(parents=True, exist_ok=True)
 
-
     images_path = get_images_path(image_dir)
 
-    model = UNet3D(in_channels=len(channels_to_use), out_channels=2, channels=32, num_blocks=num_blocks, use_batchnorm=True)
+    model = UNet(in_channels=len(channels_to_use), out_channels=2, channels=32, num_blocks=num_blocks, use_batchnorm=True, is_3d=True)
     model.to(device)
     model.load_state_dict(torch.load(torch_model, map_location=device, weights_only=True))
     model.eval()
@@ -311,10 +363,9 @@ def main(
 
             image = load_channels_image(image_og, channels_to_use)
 
-            if is_3d:
-                image = layout_3d(image, num_blocks)
-
             pred = apply_model(image, model, num_blocks, (24, 576, 576), (24, 288, 288), device)
+
+            print(pred.shape)
 
             # predicted_clusters = get_prediction_clusters(pred, cluster_size_threshold)
 
@@ -343,7 +394,6 @@ def main(
 if __name__ == "__main__":
     main(
         IMAGE_DIR,
-        IS_3D,
         CHANNEL_MARKERS,
         CHANNELS_TO_USE,
         CLUSTER_SIZE_THRESHOLD,
