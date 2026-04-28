@@ -6,13 +6,18 @@ import tifffile as tiff
 import nd2
 import numpy as np
 
+
+NUM_CHANNELS = 4
+IMAGE_WIDTH = 2304
+IMAGE_HEIGHT = 2304
+
 AXES = "TZCYX"
 
 
 def get_images_path(image_dir, *formats):
     
     if not formats:
-        formats = (".tif", ".nd2")
+        formats = (".tif", ".tiff", ".nd2")
 
     images_path = []    
     
@@ -25,33 +30,14 @@ def get_images_path(image_dir, *formats):
     return sorted(images_path)
 
 
-def _read_tiff_array(path):
-    try:
-        return tiff.imread(path)
-    except AttributeError as error:
-        if "newbyteorder" not in str(error):
-            raise
-
-        with tiff.TiffFile(path) as img:
-            return img.series[0].asarray()
-
-
 def read_tiff_image(path, inc_metadata=False):
 
     if inc_metadata:
 
         with tiff.TiffFile(path) as img:
-            try:
-                image = img.asarray()
-            except AttributeError as error:
-                if "newbyteorder" not in str(error):
-                    raise
-
-                image = img.series[0].asarray()
-
-            return image, img.imagej_metadata
+            return img.asarray(), img.imagej_metadata
     
-    return _read_tiff_array(path)
+    return tiff.imread(path)
 
 
 def read_nd2_image(path, inc_metadata=False):
@@ -73,6 +59,8 @@ def read_image(path, inc_metadata = False):
         except ValueError as e: 
             print(f"There was a problem loading {path}.\nThe error in question was {e}.") # Return error
             return
+            # tpl = nd2.rescue_nd2(path, (IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS), 'uint16')
+            # TODO: add metadata for rescue files if possible for nd2 files
         
     elif path.suffix in [".tif", ".tiff"]:
         try: 
@@ -118,39 +106,3 @@ def create_luts(rgb_values):
     lut[2, :] = (val_range.astype(np.uint16) * rgb_values[2] // 255).astype(np.uint8)
 
     return lut
-
-
-# path = "/Data_HDD/joao/mtb_data/SYBRGold_CD68_LAM_DAPI_22_04_26/0025_AA25.nd2"
-
-# import nd2
-# import numpy as np
-# import matplotlib.pyplot as plt
-
-# with open(path, 'rb') as fh:
-#     frames = nd2.rescue_nd2(fh, (2304, 2304, 4), 'uint16')
-#     ary = np.stack([frame for frame in frames])
-#     print(ary.shape)
-
-# ary_t = np.transpose(ary, (0, 3, 1, 2))
-
-# max_ary = np.max(ary_t, axis=0)
-
-
-# def normalize_image(image: np.ndarray) -> np.ndarray:
-#     image = image.astype(np.float32)
-#     min_value = image.min()
-#     max_value = image.max()
-
-#     if max_value == min_value:
-#         return np.zeros_like(image, dtype=np.float32)
-
-#     return (image - min_value) / (max_value - min_value)
-
-# for i in range(max_ary.shape[0]):
-#     normalized_image = normalize_image(max_ary[i])
-
-#     plt.figure(figsize=(12,4))
-
-#     plt.imshow(normalized_image, cmap="gray", vmin=0, vmax=1)
-#     plt.show()
-#     plt.close()

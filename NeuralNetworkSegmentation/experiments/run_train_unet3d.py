@@ -15,7 +15,7 @@ from NeuralNetworkSegmentation.data.transforms import (
     RandomAffine,
 )
 from NeuralNetworkSegmentation.data.datasets import BacteriaMaskPair
-from NeuralNetworkSegmentation.models.unet3d import UNet3D
+from NeuralNetworkSegmentation.models.unet import UNet
 from NeuralNetworkSegmentation.training.losses import FocalLoss, DiceWeightedCrossEntropyLoss, SoftDiceLoss
 from NeuralNetworkSegmentation.training.train import (
     compute_class_weights_from_dataloader,
@@ -164,7 +164,7 @@ def main(input_dir,
     print("Test Dataset: ", len(test_dataloader.dataset), " Images")
     print()
 
-    model = UNet3D(input_channels, output_channels, feature_channels, num_blocks = num_blocks, use_batchnorm = use_batchnorm).to(device)
+    model = UNet(input_channels, output_channels, feature_channels, num_blocks = num_blocks, use_batchnorm = use_batchnorm, is_3d=True).to(device)
 
     class_weights = compute_class_weights_from_dataloader(train_dataloader, output_channels, device)
     loss_fn = DiceWeightedCrossEntropyLoss(0.2, class_weights) # CrossEntropyLoss(weight=class_weights) #SoftDiceLoss() # FocalLoss(gamma=1.0)

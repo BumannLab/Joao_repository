@@ -1,10 +1,8 @@
-import torch
 from torch import nn
-from torchinfo import summary
 
 from NeuralNetworkSegmentation.models.unet_core import ConvolutionBlock, Encoder, Decoder
 
-class UNet3D(nn.Module):
+class UNet(nn.Module):
     def __init__(self, in_channels, out_channels, channels=64, num_blocks=4, use_batchnorm=False, is_3d=True):
         super().__init__()
 
@@ -29,7 +27,9 @@ class UNet3D(nn.Module):
             self.decoders.append(Decoder(current_decoder_in_channels, decoder_out_channels, use_batchnorm, is_3d))
             current_decoder_in_channels = decoder_out_channels
 
-        self.final_conv = nn.Conv3d(channels, out_channels, kernel_size=1)
+        conv = nn.Conv3d if is_3d else nn.Conv2d
+
+        self.final_conv = conv(channels, out_channels, kernel_size=1)
 
     def forward(self, x):
         skip_connections = []
@@ -47,26 +47,3 @@ class UNet3D(nn.Module):
 
         return x
 
-
-def _run_model_checks():
-    device = "cpu" # torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # if device.type == "cuda":
-    #     torch.cuda.empty_cache()
-    #     torch.cuda.ipc_collect()
-
-    input_shape = (1, 1, 24, 1152, 1152)
-
-    test_cases = [
-        ("UNet3D", UNet3D(in_channels=1, out_channels=2, channels=32, num_blocks=3, use_batchnorm=True).to(device)),
-    ]
-
-    for model_name, model in test_cases:
-        model.eval()
-        print(f"=== {model_name} ===")
-        print(model)
-        print(summary(model, input_size=input_shape, device=device, verbose=0))
-
-
-if __name__ == "__main__":
-    _run_model_checks()
