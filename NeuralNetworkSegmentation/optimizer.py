@@ -4,7 +4,7 @@ import torch.optim as optim
 def get_optimizer(optimizer_config, model):
     optimizer_name = optimizer_config["name"]
 
-    learning_rate = optimizer_config.get("lr", 0.001)
+    learning_rate = optimizer_config.get("lr", 0.0001)
     weight_decay = optimizer_config.get("weight_decay", 0)
 
     if optimizer_name == "Adam":
@@ -30,13 +30,14 @@ def get_optimizer(optimizer_config, model):
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
 
-def get_lr_scheduler(scheduler_config, optimizer):
-    scheduler_name = scheduler_config["name"]
+def get_lr_scheduler(scheduler_config, optimizer): # Handle none
+    scheduler_name = scheduler_config.get("name", {})
 
     if scheduler_name == "StepLR":
         step_size = scheduler_config.get("step_size", 10)
         gamma = scheduler_config.get("gamma", 0.1)
         return optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+    
     else:
         raise ValueError(f"Unsupported scheduler: {scheduler_name}")
     
