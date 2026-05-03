@@ -152,61 +152,6 @@ def ordered_split(
     return splits
 
 
-def build_transform_pipeline(config_transforms: dict | None):
-    if not config_transforms:
-        return None
-
-    input_config = config_transforms.get("input", {}) or {}
-    mask_config = config_transforms.get("mask", {}) or {}
-    order = list(config_transforms.get("order", []))
-
-    for transform_name in list(input_config) + list(mask_config):
-        if transform_name not in order:
-            order.append(transform_name)
-
-    steps = []
-    for transform_name in order:
-        apply_to_input = transform_name in input_config
-        apply_to_mask = transform_name in mask_config
-
-        if not apply_to_input and not apply_to_mask:
-            continue
-        
-        if transform_key not in TRANSFORM_REGISTRY:
-            raise ValueError(f"Unsupported transform: {transform_name}")
-
-        input_spec = _normalize_transform_spec(input_config.get(transform_name))
-        mask_spec = _normalize_transform_spec(mask_config.get(transform_name))
-
-        params = {}
-        params.update(mask_spec)
-        params.update(input_spec)
-
-        transform = TRANSFORM_REGISTRY[transform_key](**params)
-        steps.append((transform, apply_to_input, apply_to_mask))
-
-    return PairedTransformPipeline(steps)
-
-
-class PairedTransformPipeline:
-    def __init__(self, steps: list[tuple[Transform, bool, bool]]):
-        self.steps = steps
-
-    def __call__(self, x: torch.Tensor, y: torch.Tensor):
-        for transform, apply_to_input, apply_to_mask in self.steps:
-            x_arg = x if apply_to_input else None
-            y_arg = y if apply_to_mask else None
-
-            transformed_x, transformed_y = transform(x_arg, y_arg)
-
-            if apply_to_input:
-                x = transformed_x
-            if apply_to_mask:
-                y = transformed_y
-
-        return x, y
-
-
 def build_datasets(config_data, config_transforms, num_blocks):
 
     grouped_samples = load_images(

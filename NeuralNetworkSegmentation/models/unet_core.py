@@ -8,7 +8,6 @@ from torch import nn
 # allows for the result of the unet be the same size as the input different from the Unet defined in the first article
 # TODO: Check if all the core blocks are right, yes for now
 # TODO: Check if the end of unet should be sigmoid or softmax? softmax
-# TODO: in_channels -> number of channels in image
 
 class ConvolutionBlock(nn.Module):
     # TODO: Add batch normalization?

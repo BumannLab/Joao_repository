@@ -6,6 +6,7 @@ from tqdm import tqdm
 import tifffile as tiff
 import numpy as np
 from skimage.measure import label, regionprops
+from monai.inferers import SlidingWindowInferer
 
 from utils import get_images_path, read_image, AXES
 from NeuralNetworkSegmentation.models.unet import UNet
@@ -171,7 +172,7 @@ def pad_image(image: np.ndarray, num_blocks: int) -> np.ndarray:
 
     depth_pad_total = axis_multiple - depth_remainder if depth_remainder != 0 else 0
     depth_pad_back = round(depth_pad_total / 2)
-    depth_pad_front = depth_pad_total - depth_pad_back  
+    depth_pad_front = depth_pad_total - depth_pad_back
 
     height_pad_total = axis_multiple - height_remainder if height_remainder != 0 else 0
     height_pad_top = round(height_pad_total / 2)
@@ -283,6 +284,22 @@ def apply_model(
     return segmented_image
 
 
+def apply_model_2(image, model, sliding_window, device):
+
+    with torch.no_grad():
+    
+        image_tensor = process_image(image, device)
+        pred = sliding_window(inputs=image_tensor, predictor=model)
+        
+        pred = torch.argmax(pred, dim=1)
+        pred = torch.permute(pred, (1, 0, 2, 3)) # Convert from CxDxHxW into DxCxHxW
+
+    pred = pred.cpu().numpy().astype(np.uint16)
+    pred[pred > 0] = 65535
+
+    return pred
+
+
 def get_prediction_clusters(pred: np.ndarray, cluster_size_threshold: int):
     pred = pred > 0
     pred = np.squeeze(pred, axis=1)
@@ -352,6 +369,12 @@ def main(
     model.load_state_dict(torch.load(torch_model, map_location=device, weights_only=True))
     model.eval()
 
+    sliding_window = SlidingWindowInferer(
+        roi_size=window_size,
+        mode="gaussian",
+        overlap=0.5,
+    )
+
     mtb_pos_fname = odirname / "mTB_position.tsv"
 
     with open(mtb_pos_fname, "w") as mtb_pos_out:
@@ -364,7 +387,9 @@ def main(
 
             image = load_channels_image(image_og, channels_to_use)
 
-            pred = apply_model(image, model, num_blocks, window_size, window_stride, device)
+            # pred = apply_model(image, model, num_blocks, window_size, window_stride, device)
+
+            pred = apply_model_2(image, model, sliding_window, device)
 
             predicted_clusters = get_prediction_clusters(pred, cluster_size_threshold)
 

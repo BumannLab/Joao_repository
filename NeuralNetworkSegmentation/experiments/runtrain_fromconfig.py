@@ -19,7 +19,6 @@ def main(
     optimizer = get_optimizer(config["optimizer"], model)
     lr_scheduler = get_lr_scheduler(config["lr_scheduler"], optimizer)
     
-    
     loss = get_loss(config["loss"])
 
     # now create train object

@@ -6,7 +6,7 @@ import torchvision.transforms.functional as F
 import tifffile as tiff
 import matplotlib.pyplot as plt
 
-from utils import get_images_path
+from _utils import get_class
 
 
 def _match_return_type(x, y):
@@ -153,20 +153,49 @@ class DepthPadding:
         return _match_return_type(x, y)
     
 
-class ComposePair:
-    def __init__(self, transforms):
-        self.transforms = transforms
+class PairedTransformPipeline:
+    def __init__(self, steps):
+        self.steps = steps
 
-    def __call__(self, x, y=None):
-        for transform in self.transforms:
-            result = transform(x, y)
-            if y is None:
-                x = result
-            else:
-                x, y = result
-        return _match_return_type(x, y)
+    def __call__(self, x: torch.Tensor, y: torch.Tensor):
+        for transform, apply_to_input, apply_to_mask in self.steps:
+            x_arg = x if apply_to_input else None
+            y_arg = y if apply_to_mask else None
+
+            transformed_x, transformed_y = transform(x_arg, y_arg)
+
+            if apply_to_input:
+                x = transformed_x
+            if apply_to_mask:
+                y = transformed_y
+
+        return x, y
 
 
-from NeuralNetworkSegmentation._utils import get_class
+def build_transform_pipeline(config_transforms):
 
-x = get_class("DepthPadding", ["NeuralNetworkSegmentation.transforms"])
+    input_transforms = config_transforms["input_transforms"]
+    mask_transforms = config_transforms["mask_transforms"]
+
+    steps = list()
+
+    for transform in input_transforms:
+        
+        apply_input, apply_mask = False, False
+        
+        if transform in input_transforms:
+            apply_input = True
+        if transform in mask_transforms:
+            apply_mask = True
+
+        _transform = get_class(transform, "NeuralNetworkSegmentation.transforms")
+        _params =  input_transforms.get(transform, {}) # TODO: ASSERT PARAMS ARE EQUAL FOR BOTH RAW AND LABEL
+
+        steps.append((_transform(**_params), apply_input, apply_mask))
+
+    return PairedTransformPipeline(steps)
+
+
+        
+
+
