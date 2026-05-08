@@ -1,6 +1,6 @@
 from torch import nn
 
-from utils.utils import get_class
+from NeuralNetworkSegmentation._utils import get_class
 from NeuralNetworkSegmentation.models.unet_core import ConvolutionBlock, Encoder, Decoder
 
 #TODO Add dropout
