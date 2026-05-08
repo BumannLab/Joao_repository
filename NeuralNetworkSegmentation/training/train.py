@@ -52,9 +52,9 @@ def fit(num_epochs,
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}\n-------------------------------")
 
-        if not epoch % 200 and epoch != 0: # CHANGE TO 100
-            lr = optimizer.param_groups[0]['lr']
-            optimizer.param_groups[0]['lr'] = lr / 10
+        # if not epoch % 200 and epoch != 0: # CHANGE TO 100
+        #     lr = optimizer.param_groups[0]['lr']
+        #     optimizer.param_groups[0]['lr'] = lr / 10
 
         train_loss = train_one_epoch(train_dataloader, model, loss_fn, optimizer, device)
         train_losses.append(train_loss)
