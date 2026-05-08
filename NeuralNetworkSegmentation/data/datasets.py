@@ -26,7 +26,6 @@ class BacteriaMaskPair(torch.utils.data.Dataset):
 
         file_name, input_image, label_image = sample # not using file_name but can be helpful for future
 
-
         input_tensor = torch.from_numpy(input_image / 65535).to(torch.float32)
         label_tensor = torch.from_numpy(label_image / 255).to(torch.long)
 
