@@ -6,7 +6,7 @@ import torchvision.transforms.functional as F
 import tifffile as tiff
 import matplotlib.pyplot as plt
 
-from _utils import get_class
+from NeuralNetworkSegmentation._utils import get_class
 
 
 def _match_return_type(x, y):
@@ -16,11 +16,11 @@ def _match_return_type(x, y):
 
 
 class AdjustBrightness:
-    def __init__(self, brightness, same_brightness_all_channels = False):
-        if not isinstance(brightness, tuple):
+    def __init__(self, brightness, same_channels_brightness = False):
+        if not isinstance(brightness, list):
             brightness = (brightness, brightness)
-        self.brightness = brightness
-        self.same_brightness_all_channels = same_brightness_all_channels
+        self.brightness = tuple(brightness)
+        self.same_channels_brightness = same_channels_brightness
 
     def __call__(self, x, y=None):
 
@@ -28,7 +28,7 @@ class AdjustBrightness:
             x.size(-3), device=x.device
         )
         
-        if self.same_brightness_all_channels:
+        if self.same_channels_brightness:
             value = random.uniform(1 - self.brightness[0], 1 + self.brightness[1])
             brightness_factors.fill_(value)
             print()
@@ -58,9 +58,9 @@ class RandomAffine:
         idx 1 will be used for y.
         """
         self.degrees = degrees
-        self.translate = translate
-        self.scale = scale
-        self.shear = shear 
+        self.translate = tuple(translate)
+        self.scale = tuple(scale)
+        self.shear = tuple(shear) 
         if not isinstance(interpolation, tuple):
             interpolation = (interpolation, interpolation)
         self.interpolation = interpolation
@@ -88,14 +88,14 @@ class RandomAffine:
     
 
 class GaussianBlur:
-    def __init__(self, kernel, sigma, blur_prob = 0.5):
+    def __init__(self, kernel, sigma, blur_probability = 0.5):
         self.kernel = kernel
-        self.sigma = sigma
-        self.blur_prob = blur_prob
+        self.sigma = tuple(sigma)
+        self.blur_probability = blur_probability
 
     def __call__(self, x, y=None):
         
-        if random.random() < self.blur_prob:
+        if random.random() < self.blur_probability:
             x = F.gaussian_blur(x, self.kernel, self.sigma)
 
         return _match_return_type(x, y)
@@ -130,9 +130,9 @@ class CenterCrop:
 
 class DepthPadding:
     def __init__(self, padding):
-        if not isinstance(padding, tuple):
+        if not isinstance(padding, list):
             padding = (padding, padding)
-        self.padding = padding
+        self.padding = tuple(padding)
 
     def __call__(self, x, y = None):
 
@@ -174,22 +174,23 @@ class PairedTransformPipeline:
 
 def build_transform_pipeline(config_transforms):
 
-    input_transforms = config_transforms["input_transforms"]
-    mask_transforms = config_transforms["mask_transforms"]
+    # TODO: handle cases where raw or label has nothing on the config file"
+    raw_transforms = config_transforms["raw"]
+    label_transforms = config_transforms["label"]
 
     steps = list()
 
-    for transform in input_transforms:
+    for transform in raw_transforms:
         
         apply_input, apply_mask = False, False
         
-        if transform in input_transforms:
+        if transform in raw_transforms:
             apply_input = True
-        if transform in mask_transforms:
+        if transform in label_transforms:
             apply_mask = True
 
-        _transform = get_class(transform, "NeuralNetworkSegmentation.transforms")
-        _params =  input_transforms.get(transform, {}) # TODO: ASSERT PARAMS ARE EQUAL FOR BOTH RAW AND LABEL
+        _transform = get_class(transform, ["NeuralNetworkSegmentation.transforms"])
+        _params =  raw_transforms.get(transform, {}) # TODO: ASSERT PARAMS ARE EQUAL FOR BOTH RAW AND LABEL
 
         steps.append((_transform(**_params), apply_input, apply_mask))
 
