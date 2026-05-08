@@ -5,9 +5,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from NeuralNetworkSegmentation.transforms import build_transform_pipeline
 from utils import get_images_path, read_image
 
-class BacteriaMaskPair(Dataset):
+class BacteriaMaskDataset(Dataset):
     def __init__(self,
                 samples,
                 transform=None,
@@ -15,8 +16,7 @@ class BacteriaMaskPair(Dataset):
                 num_images=None
             ):
         self.samples = samples
-        self.transform_input = transform_input
-        self.transform_mask = transform_mask
+        self.transform = transform
         self.generate_data = generate_data
         self.num_images = num_images
 
@@ -32,7 +32,7 @@ class BacteriaMaskPair(Dataset):
 
         sample = self.samples[idx]
 
-        label, file_name, input_image, label_image = sample # not using file_name but can be helpful for future
+        label, file_name, input_image, label_image = sample # not using file_name neither label but can be helpful for future
 
         input_tensor = torch.from_numpy(input_image / 65535).to(torch.float32)
         label_tensor = torch.from_numpy(label_image / 255).to(torch.long)
@@ -152,55 +152,75 @@ def ordered_split(
     return splits
 
 
-def build_datasets(config_data, config_transforms, num_blocks):
+def build_datasets(config_data, config_transforms):
 
     grouped_samples = load_images(
-        config_data["input_path"],
-        config_data["mask_path"],
+        config_data["raw_path"],
+        config_data["label_path"],
         config_data.get("channels_to_load", [0]),
     )
 
-    fractions = config_data["fractions"]
-    train_frac = fractions.get("train", 0.7) 
-    val_frac = fractions.get("val", 0.15) 
-    test_frac = fractions.get("test", 0.15) 
+    train_frac = config_data.get("split_train", 0.7) 
+    val_frac = config_data.get("split_validation", 0.15) 
+    test_frac = config_data.get("split_test", 0.15) 
     
     splits = ordered_split(
         grouped_samples,
         train_frac,
         val_frac,
         test_frac
-
     )
 
-    transforms_pipeline = 
+    train_transforms_pipeline = build_transform_pipeline(config_transforms.get("train"))
+    val_transforms_pipeline = build_transform_pipeline(config_transforms.get("val"))
+    test_transforms_pipeline = build_transform_pipeline(config_transforms.get("test"))
+
+    generate_data = bool(config_data.get("generate_data", False))
+    num_images = int(config_data.get("num_images", 1))
+
+    return {
+        "train": BacteriaMaskDataset(
+            splits["train"],
+            transform=train_transforms_pipeline,
+            generate_data=generate_data,
+            num_images=num_images,
+        ),
+        "val": BacteriaMaskDataset(
+            splits["val"],
+            transform=val_transforms_pipeline,
+        ),
+        "test": BacteriaMaskDataset(
+            splits["test"],
+            transform=test_transforms_pipeline,
+        ),
+    }
+
 
 def build_dataloaders(
-        input_path,
-        mask_path,
-        channels_to_load,
-        train_frac,
-        val_frac,
-        test_frac,
-        batch_size,
-        transform_input,
-        transform_mask,
-        generate_data,
-        num_images
-    ):
+    config_data: dict,
+    config_transforms: dict | None = None,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    datasets = build_datasets(config_data, config_transforms)
+    batch_size = int(config_data.get("batch_size", 1))
+    num_workers = int(config_data.get("num_workers", 0))
 
-    
+    train_loader = DataLoader(
+        datasets["train"],
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+    )
+    val_loader = DataLoader(
+        datasets["val"],
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
+    test_loader = DataLoader(
+        datasets["test"],
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
 
-    samples = load_images(input_path, mask_path, channels_to_load)
-
-    ordered_samples = ordered_split(samples, train_frac, val_frac, test_frac)
-
-    train_dataset = BacteriaMaskPair(ordered_samples["train"], transform_input=transform_input, transform_mask=transform_mask, generate_data=generate_data, num_images = num_images)
-    validation_dataset = BacteriaMaskPair(ordered_samples["val"], transform_input=transform_input, transform_mask=transform_mask)
-    test_dataset  = BacteriaMaskPair(ordered_samples["test"])
-     
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
-    test_dataloader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    return train_dataloader, validation_dataloader, test_dataloader
+    return train_loader, val_loader, test_loader
