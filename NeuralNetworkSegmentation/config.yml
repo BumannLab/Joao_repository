@@ -1,0 +1,108 @@
+model:
+  name: "UNet3D" # Model architecture to build. Supported here: UNet2D, UNet3D.
+  in_channels: 1 # Number of image channels given to the network.
+  features: 32 # Base number of feature maps; larger values increase model capacity and memory use.
+  out_channels: 2 # Number of output classes predicted by the final layer.
+  use_batchnorm: True # Whether convolution blocks include batch normalization.
+  dropout_rate: 0.0 # Dropout probability used in the model blocks.
+
+optimizer:
+  name: "Adam" # Optimizer to use. Check optimizer.py for the supported names and arguments.
+  lr: 0.0001 # Learning rate.
+  weight_decay: 0 # L2 regularization strength applied by the optimizer.
+
+lr_scheduler:
+  name: "StepLR" # Learning-rate scheduler applied during training.
+  step_size: 100 # Number of epochs between LR drops.
+  gamma: 0.1 # Multiplicative factor applied when the scheduler steps.
+
+loss:
+  name: "DiceCELoss" # Loss function to build. Supported names depend on loss.py.
+  include_background: True # Whether the background class contributes to the Dice term.
+  lambda_dice: 0.7 # Weight of the Dice part inside DiceCELoss.
+  lambda_ce: 0.3 # Weight of the Cross Entropy part inside DiceCELoss.
+  smooth: 1.0 # Smoothing constant added to the Dice numerator/denominator for stability.
+
+data:
+  raw_path: "" # Path to the input images used for training.
+  channels_to_load: [0] # Channel indices to load from each image.
+  label_path: "" # Path to the segmentation masks matching the input images.
+  split_train: 0.6 # Fraction of the dataset assigned to the training split.
+  split_validation: 0.2 # Fraction of the dataset assigned to the validation split.
+  split_test: 0.2 # Fraction of the dataset assigned to the test split.
+
+data_generation:
+  generate_data: True # Whether to create a generated dataset before training.
+  num_images: 15 # Number of images/events to generate when data generation is enabled.
+
+transforms:
+  train:
+    raw:
+      RandomAffine:
+        degrees: 180
+        translate:  [0.2, 0.2]
+        scale:  [0.85, 1.15]
+        shear:  [-8, 8]
+
+      GaussianBlur:
+        kernel: 3
+        sigma:  [0.1, 1.5]
+        blur_probability: 0.4
+      
+      CenterCrop:
+        size: 128
+
+      AdjustBrightness:
+        brightness: [0.5, 0.8]
+        same_channels_brightness: False
+      
+      DepthPadding:
+        padding: [1, 2]
+
+    label:
+      RandomAffine:
+        degrees: 180
+        translate: [0.2, 0.2]
+        scale: [0.85, 1.15]
+        shear: [-8, 8]
+
+      CenterCrop:
+        size: 128
+
+      DepthPadding:
+        padding: [1, 2]
+
+      
+  
+  val:
+    raw:
+      CenterCrop:
+        size: 128
+
+      DepthPadding:
+        padding: [1, 2]
+
+    label:
+      CenterCrop:
+        size: 128
+
+      DepthPadding:
+        padding: [1, 2]
+
+  test:
+    raw:
+      CenterCrop:
+        size: 128
+
+      DepthPadding:
+        padding: [1, 2]
+
+    label:
+      CenterCrop:
+        size: 128
+
+      DepthPadding:
+        padding: [1, 2]
+
+
+seed: None # Random seed for reproducibility. If None, a random seed is generated at runtime.
