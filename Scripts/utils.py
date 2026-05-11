@@ -1,17 +1,83 @@
 from glob import glob
 import re
 from pathlib import Path
+from math import ceil, floor
+import re
+from enum import StrEnum
 
 import tifffile as tiff
 import nd2
 import numpy as np
-
 
 NUM_CHANNELS = 4
 IMAGE_WIDTH = 2304
 IMAGE_HEIGHT = 2304
 
 AXES = "TZCYX"
+
+class RoundingMode(StrEnum):
+    NEAREST = "nearest"
+    CEIL = "ceil"
+    FLOOR = "floor"
+
+
+class Tile:
+    def __init__(self, tile_path, overlap, direction_to_remove_overlap = [], rounding_mode = "nearest"):
+        self.tile_path = tile_path
+        self.direction_rm_overlap = direction_to_remove_overlap
+        self.overlap = overlap # Overlap is from 0 - 100 not from 0 - 1
+        self.rounding_mode = RoundingMode(rounding_mode)
+
+
+    def compute_overlap_pixels(self, height, width):
+        """
+        rounding_mode: ceil, floor, nearest
+        """
+
+        pixels_to_remove_h = height * (self.overlap / 100)
+        pixels_to_remove_w = width  * (self.overlap / 100)
+
+        if self.rounding_mode == "ceil":
+
+            pixels_to_remove_h = ceil(pixels_to_remove_h)
+            pixels_to_remove_w = ceil(pixels_to_remove_w)
+
+        elif self.rounding_mode == "floor":
+
+            pixels_to_remove_h = floor(pixels_to_remove_h)
+            pixels_to_remove_w = floor(pixels_to_remove_w)
+
+        elif self.rounding_mode == "nearest":
+
+            pixels_to_remove_h = round(pixels_to_remove_h)
+            pixels_to_remove_w = round(pixels_to_remove_w)
+
+        return pixels_to_remove_h, pixels_to_remove_w
+
+
+    def remove_overlap(self, tile): 
+
+        if self.overlap == 0:
+            return tile
+
+        idx = [slice(None)] * tile.ndim
+
+        height, width = tile.shape[-2:]
+
+        pixels_to_remove_h, pixels_to_remove_w = self.compute_overlap_pixels(height, width)
+
+        for direction in self.direction_rm_overlap:
+
+            if direction == "top":
+                idx[-2] = slice(pixels_to_remove_h, None)
+            
+            elif direction == "left":
+                idx[-1] = slice(pixels_to_remove_w, None)
+            
+            elif direction == "right":
+                idx[-1] = slice(-pixels_to_remove_w)
+        
+        return self.tile[tuple(idx)]
 
 
 def get_images_path(image_dir, *formats):
