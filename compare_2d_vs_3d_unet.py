@@ -1,11 +1,13 @@
+from pathlib import Path
+
 import numpy as np
 from skimage.measure import label, regionprops
 from scipy.spatial.distance import cdist
 
 from utils import read_image
 
-IMAGE_FILE_2D = ""
-IMAGE_FILE_3D = ""
+IMAGE_FILE_2D = "mTB_segmentation/3Dvs2D/2D/2nd_model/model_test_performance.tif"
+IMAGE_FILE_3D = "mTB_segmentation/3Dvs2D/3D/2nd_model/model_test_performance.tif"
 
 # -----------------------------
 # Dice between two binary masks
@@ -120,18 +122,67 @@ def evaluate_objects(gt_mask, pred_mask, dist_thresh=10):
     return results
 
 
-def main(image_file):
+def evaluate_dataset(gt_list, pred_list, dist_thresh=10):
+    """
+    gt_list: list of GT masks (2D arrays)
+    pred_list: list of prediction masks (2D arrays)
+    """
 
-    image_2D = read_image(image_file)
+    assert len(gt_list) == len(pred_list)
 
-    gt = image[1]
-    pred_2d = image[2]
+    all_dice = []
+    all_tp = []
+    all_fp = []
+    all_fn = []
 
-    image_3d = read_image(image_file)
-    pred_3d = np.max(image_3d, axis = 0)[-1]
+    for gt, pred in zip(gt_list, pred_list):
 
-    results_2d = evaluate_objects(gt, pred_2d)
-    results_3d = evaluate_objects(gt, pred_3d_proj)
+        results = evaluate_objects(
+            gt_mask=gt,
+            pred_mask=pred,
+            dist_thresh=dist_thresh
+        )
+
+        # collect per-image results
+        all_dice.append(results["dice_per_object"])
+        all_tp.append(results["tp_objects"])
+        all_fp.append(results["fp_objects"])
+        all_fn.append(results["fn_objects"])
+
+    # flatten Dice across ALL objects in dataset
+    all_dice_flat = np.concatenate([d for d in all_dice if len(d) > 0])
+
+    return {
+        "mean_object_dice": np.mean(all_dice_flat) if len(all_dice_flat) > 0 else 0,
+        "median_object_dice": np.median(all_dice_flat) if len(all_dice_flat) > 0 else 0,
+        "mean_tp_objects": np.mean(all_tp),
+        "mean_fp_objects": np.mean(all_fp),
+        "mean_fn_objects": np.mean(all_fn),
+        "num_images": len(gt_list)
+    }
+
+
+def main(image_file_2d, image_file_3d):
+
+    image_2d = read_image(Path(image_file_2d))
+
+    gt = image_2d[:, 1]
+    pred_2d = image_2d[:, -1]
+    print(pred_2d.shape)
+
+    image_3d = read_image(Path(image_file_3d))
+    pred_3d_proj = np.max(image_3d, axis = 1)[:, -1]
+    print(pred_3d_proj.shape)
+
+    results_2d = evaluate_dataset(gt, pred_2d)
+    results_3d = evaluate_dataset(gt, pred_3d_proj)
+
+    print(results_2d)
+    print(results_3d)
+
+if __name__=="__main__":
+    main(IMAGE_FILE_2D,
+         IMAGE_FILE_3D)
 
 # -----------------------------
 # Example usage
