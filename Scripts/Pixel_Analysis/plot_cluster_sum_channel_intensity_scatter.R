@@ -1,7 +1,7 @@
 library(ggplot2)
-library(tidyverse)
 library(data.table)
 library(dplyr)
+library(ggprism)
 
 
 read_tsv <- function(tsv_name){
@@ -38,14 +38,13 @@ combinations_of_columns_for_scatter <- function(channel_of_interest, columns_to_
 
 filter_rows_no_cluster <- function(dataframe, columns_to_read){
   dataframe <- dataframe |>
-
     filter(if_any(any_of(c("Area", "Volume")), ~ .x > 0))  
   
   return (dataframe)
 }
 
 
-plot_scatter <- function(dataframe, cols_combinations_to_plot, channel_map, odirname){
+plot_scatter <- function(dataframe, cols_combinations_to_plot, odirname){
   for (col_combn in cols_combinations_to_plot) {
     
     col1 = col_combn[1]
@@ -58,31 +57,53 @@ plot_scatter <- function(dataframe, cols_combinations_to_plot, channel_map, odir
       theme_minimal() +
       scale_y_log10() +
       scale_x_log10() +
-      xlab(col1) +
-      ylab(col2)
+      xlab(gsub("_", " ", col1)) +
+      ylab(gsub("_", " ", col2)) +
+      theme_prism(base_size = 16)
     
     filename <- paste0(odirname, "/", 
                        rename_channel(col1, channel_map), 
                        "_vs_", 
-                       rename_channel(col2, channel_map), 
-                       "_scatter_plot_test.png")
+                       col2, 
+                       "_scatter_plot.png")
     
-    ggsave(filename, plot, width = 10, height = 10)
+    ggsave(filename, plot, width = 12, height = 8)
   }
 }
 
 
-main <- function(tsv_name, channel_of_interest, channel_map, odirname){
+main <- function(tsv_name, channel_of_interest, odirname){
   cluster_df <- read_tsv(tsv_name)
   cols_to_plot <- obtain_columns_to_plot(cluster_df)
   combn_cols <- combinations_of_columns_for_scatter(channel_of_interest, cols_to_plot)
-  cluster_df <- process_dataframe(cluster_df, cols_to_plot)
-  plot_scatter(cluster_df, combn_cols, channel_map, odirname)
+  cluster_df_filtered <- filter_rows_no_cluster(cluster_df, cols_to_plot)
+  plot_scatter(cluster_df_filtered, combn_cols, odirname)
+  
+  return (cluster_df)
 }
 
-tsv_name <- "/data/joao/Scripts/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/2M_ammonium_acetate/Full_scan/voxel_clusters_size_over5_channel1_greater_equal_500_test2.tsv"
+tsv_name <- "/data/joao/Materials/Joao_repository/Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/voxel_clusters_size_over5_SYBRGold_greater_equal_1000.tsv"
 channel_of_interest <- "SYBRGold"
-odirname <- '/data/joao/Scripts/Results/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/2M_ammonium_acetate/Full_scan/2/Plots'
+odirname <- "/data/joao/Materials/Joao_repository/Results/New_Destaining/Full_scan_2M/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/Plots_sybrgold_above1000"
 
-main(tsv_name, channel_of_interest, channel_map, odirname)
+cluster_df_filtered <- main(tsv_name, channel_of_interest, odirname)
+
+
+base <- ggplot(cluster_df_filtered, aes(x = SYBRGold_Mean_Intensity, 
+                              y = DAPI_Mean_Intensity)) +
+  geom_point(size = 1) +
+  theme_minimal() +
+  scale_y_log10() +
+  scale_x_log10() +
+  xlab(gsub("_", " ", "SYBRGold_Mean_Intensity")) +
+  ylab(gsub("_", " ", "DAPI_Mean_Intensity"))
+
+plot <- base +
+        theme_prism(base_size = 16)
+
+plot
+
+cluster_df_filtered_2 <- cluster_df_filtered |>
+  filter(DAPI_Mean_Intensity <250)  
+
 

@@ -3,7 +3,8 @@ import re
 from pathlib import Path
 from math import ceil, floor
 import re
-from enum import StrEnum
+from enum import Enum
+
 
 import tifffile as tiff
 import nd2
@@ -15,50 +16,56 @@ IMAGE_HEIGHT = 2304
 
 AXES = "TZCYX"
 
-class RoundingMode(StrEnum):
+class RoundingMode(Enum):
     NEAREST = "nearest"
     CEIL = "ceil"
     FLOOR = "floor"
 
 
-class Tile:
-    def __init__(self, tile_path, overlap, direction_to_remove_overlap = [], rounding_mode = "nearest"):
+class Tile: 
+    def __init__(self, tile_path, include_metadata = False, overlap = 0, overlap_directions = [], rounding_mode = "nearest"):
+        """
+        rounding_mode: ceil, floor, nearest
+        """
         self.tile_path = tile_path
-        self.direction_rm_overlap = direction_to_remove_overlap
+        self.include_metadata = include_metadata
+        self.overlap_directions = overlap_directions
         self.overlap = overlap # Overlap is from 0 - 100 not from 0 - 1
         self.rounding_mode = RoundingMode(rounding_mode)
 
 
+    def read_tile(self):
+        
+        # stores value or tuple (when inc_metadata is true) into single variable and unpacks when needed in main code
+        tpl = read_image(self.tile_path, self.include_metadata)
+
+        return tpl
+        
+
     def compute_overlap_pixels(self, height, width):
-        """
-        rounding_mode: ceil, floor, nearest
-        """
 
         pixels_to_remove_h = height * (self.overlap / 100)
         pixels_to_remove_w = width  * (self.overlap / 100)
 
-        if self.rounding_mode == "ceil":
+        if self.rounding_mode == RoundingMode.CEIL:
 
             pixels_to_remove_h = ceil(pixels_to_remove_h)
             pixels_to_remove_w = ceil(pixels_to_remove_w)
 
-        elif self.rounding_mode == "floor":
+        elif self.rounding_mode == RoundingMode.FLOOR:
 
             pixels_to_remove_h = floor(pixels_to_remove_h)
             pixels_to_remove_w = floor(pixels_to_remove_w)
 
-        elif self.rounding_mode == "nearest":
+        elif self.rounding_mode == RoundingMode.NEAREST:
 
             pixels_to_remove_h = round(pixels_to_remove_h)
             pixels_to_remove_w = round(pixels_to_remove_w)
 
         return pixels_to_remove_h, pixels_to_remove_w
-
+    
 
     def remove_overlap(self, tile): 
-
-        if self.overlap == 0:
-            return tile
 
         idx = [slice(None)] * tile.ndim
 
@@ -77,7 +84,8 @@ class Tile:
             elif direction == "right":
                 idx[-1] = slice(-pixels_to_remove_w)
         
-        return self.tile[tuple(idx)]
+        return tile[tuple(idx)]
+    
 
 
 def get_images_path(image_dir, *formats):
@@ -107,13 +115,25 @@ def read_tiff_image(path, inc_metadata=False):
 
 
 def read_nd2_image(path, inc_metadata=False):
-    
-    if inc_metadata:
+    with nd2.ND2File(path) as img:
+        try:
+            image = img.asarray()
+            return (image, img.metadata) if inc_metadata else image
+        except ValueError:
+            print(
+                "File is corrupted. Metadata will not be included. "
+                "Attempting to rescue the file..."
+            )
 
-        with nd2.ND2File(path) as img:
-            return img.asarray(), img.metadata    
-    
-    return nd2.imread(path)
+            frames = nd2.rescue_nd2(
+                path,
+                frame_shape=(IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS),
+                dtype="uint16",
+                verbose=False,
+            )
+            image = np.stack(list(frames))
+            image = np.transpose(image, (0, 3, 1, 2))
+            return (image, None) if inc_metadata else image
 
 
 def read_image(path, inc_metadata = False):
@@ -125,16 +145,9 @@ def read_image(path, inc_metadata = False):
         except ValueError as e: 
             print(f"There was a problem loading {path}.\nThe error in question was {e}.") # Return error
             return
-            # tpl = nd2.rescue_nd2(path, (IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS), 'uint16')
-            # TODO: add metadata for rescue files if possible for nd2 files
         
-    elif path.suffix in [".tif", ".tiff"]:
-        try: 
+    elif path.suffix in [".tif", ".tiff"]: 
             tpl = read_tiff_image(path, inc_metadata)
-        
-        except ValueError as e: 
-            print(f"There was a problem loading {path}.\nThe error in question was {e}.") # Return error
-            return
     
     else:
         print(f"File extension is neither a tif neither an nd2.")

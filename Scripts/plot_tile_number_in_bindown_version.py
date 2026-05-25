@@ -8,16 +8,14 @@ from utils import get_images_path
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_snake
 
 
-TILES_PATH = "/data/joao/mTBData/LAM1AL647_CD68AL555_SYBRGold_DAPI/MAX"
-BINDOWN_IMAGE_FILE = "/data/joao/mTBData/LAM1AL647_CD68AL555_SYBRGold_DAPI/5xbindown_stitched/stitched_01_bin5x.tif"
+TILES_PATH = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month/MAX"
+BINDOWN_IMAGE_FILE = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month/5xbindown_stitched/stitched_01_bin5x.tif"
 
 TILE_HEIGHT = 2304
 TILE_WIDTH = 2304
 TILE_OVERLAP = 5
 
 BINDOWN_BY = 5
-
-OUT_PATH = "/data/joao/mTBData/LAM1AL647_CD68AL555_SYBRGold_DAPI/5xbindown_stitched/labeled_tiles_bin5x.tif"
 
 
 def adjusted_tile_center_pos(all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by):
@@ -67,11 +65,7 @@ def tile_centres_text_layer(image_shape, tile_center_positions, out_path):
     tiff.imwrite(out_path, np.array(img))
 
 
-def main(tiles_path, tile_height, tile_width, tile_overlap, bindown_img_path, bindown_by, out_path):
-
-    odirname = Path(out_path).parent
-    odirname.mkdir(parents= True, exist_ok=True)
-
+def main(tiles_path, tile_height, tile_width, tile_overlap, bindown_img_path, bindown_by):
     images_paths = get_images_path(tiles_path, ".tif")
 
     all_tiles_positions = get_all_tiles_position_snake(images_paths)
@@ -80,8 +74,11 @@ def main(tiles_path, tile_height, tile_width, tile_overlap, bindown_img_path, bi
 
     adjusted_tile_center_positions = adjusted_tile_center_pos(all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by)
 
+    bindown_img_path = Path(bindown_img_path)
     bindown_img_shape = tiff.imread(bindown_img_path).shape
 
+    out_path = bindown_img_path.with_stem("labeled_tiles_" + bindown_img_path.stem.split("_")[-1])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     tile_centres_text_layer(bindown_img_shape, adjusted_tile_center_positions, out_path)
 
 
@@ -91,5 +88,4 @@ if __name__ == "__main__":
          TILE_WIDTH,
          TILE_OVERLAP,
          BINDOWN_IMAGE_FILE,
-         BINDOWN_BY,
-         OUT_PATH)
+         BINDOWN_BY)

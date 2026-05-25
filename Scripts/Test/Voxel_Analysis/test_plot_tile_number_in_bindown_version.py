@@ -1,6 +1,6 @@
 import pytest
 
-from Voxel_Analysis.plot_tile_number_in_bindown_version import adjusted_tile_center_pos
+from plot_tile_number_in_bindown_version import adjusted_tile_center_pos
 
 
 class TestAdjustedTileCenterPos:

@@ -5,15 +5,15 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import tifffile as tiff
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import numpy as np
 
 from utils import read_tiff_image, slice_channel_threshold
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_snake
 
 
-VOXEL_CLUSTERS_FILE = "/data/joao/Materials/Joao_repository/Results/Old_Destaining/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/SYBRGold1000_Threshold/voxel_clusters_size_over5_SYBRGold_greater_equal_1000.tsv"
-BINDOWN_IMAGE_FILE = "/data/joao/mTBData/LAM1AL647_CD68AL555_SYBRGold_DAPI/5xbindown_stitched/stitched_01_bin5x.tif" # Preferably the sybrgold bindown channel
+VOXEL_CLUSTERS_FILE = "/data/joao/Materials/Joao_repository/Results/B2020.20260/SYBRGold_CD68_LAM_DAPI/SYBRGold_GET800/voxel_clusters_size_over5_SYBRGold_greater_equal_800.tsv"
+BINDOWN_IMAGE_FILE = "/data/joao/mTBData/B2020.20260/SYBRGold_CD68_LAM_DAPI_2/stitched_bindown5x/stitched_01_bin5x.tif" # Preferably the sybrgold bindown channel
 
 TILE_HEIGHT = 2304
 TILE_WIDTH = 2304
@@ -24,9 +24,9 @@ BINDOWN_BY = 5
 MAXIMUM_DISPLAYED_VALUE = 800
 
 USE_FILTERS = True
-FILTERS = "DAPI<=250"
+FILTERS = "DAPI<=250,SYBRGold>=1000"
 
-ODIRFILENAME = "/data/joao/Materials/Joao_repository/Results/Old_Destaining/SYBRGold_CD68AL555_LAMAL647_DAPI/Voxel_Analysis/SYBRGold1000_Threshold/DAPI_mean_lt250_SYBRGold_mean_gt1000_bindown5x"
+ODIRFILENAME = "/data/joao/Materials/Joao_repository/Results/B2020.20260/SYBRGold_CD68_LAM_DAPI/SYBRGold_GET800/DAPI_mean_lt250_SYBRGold_mean_gt1000_bindown5x"
 
 @dataclass
 class Cluster:
@@ -44,8 +44,8 @@ class Cluster:
         bindown_tile_width = round((tile_width - pixels_remove_width) / bindown_by) * tile_column
         bindown_tile_height = round((tile_height - pixels_remove_height) / bindown_by) * tile_row
         
-        bindown_x_centroid = round(self.X_centroid / bindown_by)
-        bindown_y_centroid = round(self.Y_centroid / bindown_by)
+        bindown_x_centroid = round(round(self.X_centroid) / bindown_by)
+        bindown_y_centroid = round(round(self.Y_centroid) / bindown_by)
 
         rescaled_bindown_x = bindown_x_centroid + bindown_tile_width
         rescaled_bindown_y = bindown_y_centroid + bindown_tile_height
@@ -134,10 +134,10 @@ def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_data, m
     datax = [cluster.X_centroid for cluster in cluster_data]
     datay = [cluster.Y_centroid for cluster in cluster_data]
 
-    plt.figure(figsize=(16, 8), frameon=False)
+    plt.figure(frameon=False)
 
     plt.imshow(bindown_image, cmap='gray', vmin=0, vmax=255, interpolation='nearest', aspect='auto', origin='upper')
-    plt.scatter(datax, datay, marker = "x", s = 2.5, linewidths = 0.7, c ="magenta")
+    plt.scatter(datax, datay, marker="o", s=2.5, facecolors='none', edgecolors='magenta', linewidths=0.5)
     
     plt.axis('off')
 
@@ -157,24 +157,22 @@ def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_data, od
 
         draw = ImageDraw.Draw(img)
 
-        font = ImageFont.load_default(size = 30)
-
-        text = "x"
-
-        bbox = draw.textbbox((0, 0), text, font=font)
-
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
+        circle_radius = 28
+        circle_width = 10
 
         for cluster in cluster_data:
             
             x, y = cluster.X_centroid, cluster.Y_centroid
-            
-            draw.text(
-                (int(x - text_w / 2), int(y - text_h / 2)),
-                text,
-                fill=65535,
-                font=font
+
+            draw.ellipse(
+                (
+                    int(round(x - circle_radius)),
+                    int(round(y - circle_radius)),
+                    int(round(x + circle_radius)),
+                    int(round(y + circle_radius)),
+                ),
+                outline=65535,
+                width=circle_width
             )
 
         tiff.imwrite(f"{odirfilename}.tiff", np.array(img))
@@ -219,4 +217,5 @@ if __name__ == "__main__":
          ODIRFILENAME,
          USE_FILTERS,
          FILTERS)
+    
     

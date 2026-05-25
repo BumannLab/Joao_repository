@@ -101,6 +101,68 @@ class GaussianBlur:
         return _match_return_type(x, y)
     
 
+class RandomHorizontalFlip:
+    def __init__(self, flip_probability=0.5):
+        self.flip_probability = flip_probability
+
+    def __call__(self, x, y=None):
+
+        if random.random() < self.flip_probability:
+            x = torch.flip(x, dims=(-1,))
+            if y is not None:
+                y = torch.flip(y, dims=(-1,))
+
+        return _match_return_type(x, y)
+    
+
+class RandomVerticalFlip:
+    def __init__(self, flip_probability=0.5):
+        self.flip_probability = flip_probability
+
+    def __call__(self, x, y=None):
+
+        if random.random() < self.flip_probability:
+            x = torch.flip(x, dims=(-2,))
+            if y is not None:
+                y = torch.flip(y, dims=(-2,))
+
+        return _match_return_type(x, y)
+    
+
+class RandomDepthShift:
+    def __init__(self, max_shift, shift_probability=0.5, fill_value=0, mask_fill_value=0):
+        self.max_shift = int(max_shift)
+        self.shift_probability = shift_probability
+        self.fill_value = fill_value
+        self.mask_fill_value = mask_fill_value
+
+    def _shift(self, tensor, shift, fill_value):
+        if tensor.ndim < 4 or shift == 0:
+            return tensor
+
+        depth = tensor.shape[0]
+        if abs(shift) >= depth:
+            return torch.full_like(tensor, fill_value)
+
+        shifted = torch.full_like(tensor, fill_value)
+        if shift > 0:
+            shifted[shift:] = tensor[:-shift]
+        else:
+            shifted[:shift] = tensor[-shift:]
+
+        return shifted
+
+    def __call__(self, x, y=None):
+
+        if self.max_shift > 0 and random.random() < self.shift_probability:
+            shift = random.randint(-self.max_shift, self.max_shift)
+            x = self._shift(x, shift, self.fill_value)
+            if y is not None:
+                y = self._shift(y, shift, self.mask_fill_value)
+
+        return _match_return_type(x, y)
+    
+
 class Resize:
     def __init__(self, size, interpolation = (v2.InterpolationMode.BILINEAR, v2.InterpolationMode.NEAREST)):
         self.size = size
@@ -196,7 +258,42 @@ def build_transform_pipeline(config_transforms):
 
     return PairedTransformPipeline(steps)
 
-
+import numpy as np
         
+if __name__ == "__main__":
 
+    random_horizontal_flip = RandomHorizontalFlip(1.0)
 
+    random_translation = RandomAffine(0, (0.2, 0.2), (1.0, 1.0), (0.0, 0.0))
+
+    random_rotation = RandomAffine(180, (0.0, 0.0), (1.0, 1.0), (0.0, 0.0))
+
+    input = torch.from_numpy(tiff.imread("/data/joao/Materials/Joao_repository/Data/3D_NEW/input/positive_1028_AR53_4.tif") / 65535)
+
+    input_translated = random_translation(input).numpy().astype(np.float32)
+
+    input_flipped = random_horizontal_flip(input).numpy().astype(np.float32)
+
+    input_rotated = random_rotation(input).numpy().astype(np.float32)
+
+    tiff.imwrite(
+        f"/data/joao/Poster/augmentation/translation.tif",
+        input_translated,
+        imagej=True,
+        metadata={"mode": "color", "axes": "ZCYX"},
+    )
+
+    tiff.imwrite(
+        f"/data/joao/Poster/augmentation/flipped.tif",
+        input_flipped,
+        imagej=True,
+        metadata={"mode": "color", "axes": "ZCYX"},
+    )
+
+    tiff.imwrite(
+        f"/data/joao/Poster/augmentation/rotated.tif",
+        input_rotated,
+        imagej=True,
+        metadata={"mode": "color", "axes": "ZCYX"},
+    )
+    

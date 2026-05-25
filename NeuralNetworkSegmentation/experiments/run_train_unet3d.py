@@ -1,8 +1,11 @@
 from pathlib import Path
+from datetime import datetime
+import json
 import os
 
 import torch
 from torch.utils.data import DataLoader
+from monai.losses import DiceFocalLoss
 
 from NeuralNetworkSegmentation.data.io import load_images
 from NeuralNetworkSegmentation.data.splits import ordered_split
@@ -13,6 +16,8 @@ from NeuralNetworkSegmentation.data.transforms import (
     DepthPadding,
     GaussianBlur,
     RandomAffine,
+    RandomHorizontalFlip,
+    RandomVerticalFlip
 )
 from NeuralNetworkSegmentation.data.datasets import BacteriaMaskPair
 from NeuralNetworkSegmentation.models.unet import UNet
@@ -34,9 +39,9 @@ torch.cuda.empty_cache()
 ######################
 # IMAGE & MASKS PATH #
 ######################
-INPUT_DIR = "/data/joao/Materials/Joao_repository/NN_Dataset/64X64_DATASET/input"  # Directory containing the training input volumes.
+INPUT_DIR = "Data/DATASET_COMPARISON/3D_comparison/Dataset_threshold_800/inputs"  # Directory containing the training input volumes.
 CHANNELS_TO_LOAD = [0]  # Input channels to keep from each volume, using 0-based indexing.
-MASK_DIR = "/data/joao/Materials/Joao_repository/NN_Dataset/64X64_DATASET/mask"  # Directory containing the segmentation mask volumes.
+MASK_DIR = "Data/DATASET_COMPARISON/3D_comparison/Dataset_threshold_800/masks"  # Directory containing the segmentation mask volumes.
 
 
 ##############
@@ -47,20 +52,27 @@ SPLIT_VALIDATION = 0.2  # Fraction of samples assigned to the validation split.
 SPLIT_TEST = 0.2  # Fraction of samples assigned to the test split.
 
 
+###################
+# DATA GENERATION #
+###################
+GENERATE_DATA = True  # Whether to generate augmented variants from each training sample.
+NUM_IMAGES = 10  # Number of augmented samples to generate per original training sample.
+
+
 #####################
 # DATA AUGMENTATION #
 #####################
-GENERATE_DATA = False  # Whether to generate augmented variants from each training sample.
-NUM_IMAGES = 20  # Number of augmented samples to generate per original training sample.
 BRIGHTNESS_FACTOR = (0.5, 1.0)  # Brightness jitter range applied during augmentation.
 SAME_CHANNEL_BRIGHTNESS = False  # Whether all channels share the same sampled brightness factor.
 KERNEL_SIZE = 3  # Gaussian blur kernel size used during augmentation.
 SIGMA = (0.1, 1.5)  # Range of Gaussian blur sigma values.
-PROBABILITY_BLUR = 0.5  # Probability of applying Gaussian blur to a sample.
+PROBABILITY_BLUR = 0.4  # Probability of applying Gaussian blur to a sample.
+HORIZONTAL_FLIP_PROB = 0.5
+VERTICAL_FLIP_PROB = 0.5
 DEGREES = 180  # Maximum rotation angle in degrees for random affine augmentation.
-TRANSLATE = (0, 0) #(0.09, 0.09)  # Maximum horizontal and vertical translation as image fractions.
+TRANSLATE = (0.2, 0.2) #(0.09, 0.09)  # Maximum horizontal and vertical translation as image fractions.
 SCALE = (0.85, 1.15)  # Min and max scale factors for random affine augmentation.
-SHEAR = (-4, 4)  # Min and max shear values for random affine augmentation.
+SHEAR = (-8, 8)  # Min and max shear values for random affine augmentation.
 SIZE = 128  # Final cropped spatial size used for training patches.
 Z_PADDING = (2, 1)  # Depth padding added before/after the z axis.
 
@@ -76,13 +88,14 @@ LOSS_FUNCTION = "None"  # Loss function selection key for this experiment.
 #############
 OPTIMIZER = "ADAM"  # Optimizer selection key for this experiment.
 LEARNING_RATE = 0.0001  # Initial learning rate passed to the optimizer.
+WEIGHT_DECAY = 0
 
 
 ##############
 # PARAMETERS #
 ##############
-BATCH_SIZE = 16  # Number of samples processed per optimization step.
-NUM_EPOCHS = 450  # Total number of full passes through the training dataset.
+BATCH_SIZE = 32  # Number of samples processed per optimization step.
+NUM_EPOCHS = 150  # Total number of full passes through the training dataset.
 
 
 #########
@@ -94,13 +107,63 @@ FEATURE_CHANNELS = 32  # Base number of feature channels in the first UNet block
 OUTPUT_CHANNELS = 2  # Number of output classes predicted by the network.
 NUM_BLOCKS = 3  # Number of encoder/decoder stages in the UNet.
 USE_BATCHNORM = True  # Whether to use batch normalization inside convolution blocks.
-MODEL_ODIRNAME = "./mTB_segmentation/center_crop_no_translation_bigger_images_64x64dataset_5k_background/model"  # Output path used to save the trained model.
+MODEL_ODIRNAME = "./mTB_segmentation/2Dvs3D/recreating_attempt1_3D/model"  # Output path used to save the trained model.
+ALLOW_MODEL_OVERWRITE = False  # Set to True only when you intentionally want to replace an existing .pt file.
 
 DEVICE = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"  # Device used for training and inference.
 
-SEED = int.from_bytes(os.urandom(4), 'big')  # Random seed used to make data order, augmentation, and training reproducible.
+SEED = 2168897548 #int.from_bytes(os.urandom(4), 'big')  # Random seed used to make data order, augmentation, and training reproducible.
 print(SEED)
 # For random seeds use int.from_bytes(os.urandom(4), 'big')
+
+
+def save_run_globals():
+    run_time = datetime.now().astimezone()
+    run_config = {
+        "run_time": run_time.isoformat(),
+        "script": str(Path(__file__).resolve()),
+        "globals": {
+            name: value
+            for name, value in globals().items()
+            if name.isupper()
+        },
+    }
+
+    odirname = Path(MODEL_ODIRNAME).parent / "run_configs"
+    odirname.mkdir(parents=True, exist_ok=True)
+
+    timestamp = run_time.strftime("%Y%m%d_%H%M%S")
+    output_path = odirname / f"run_config_{timestamp}_seed_{SEED}.json"
+
+    with open(output_path, "w") as outfile:
+        json.dump(run_config, outfile, indent=2, default=str)
+
+    print(f"Saved run config: {output_path}")
+    return output_path
+
+
+def get_model_output_path(model_odirname):
+    return Path(f"{model_odirname}.pt")
+
+
+def ensure_model_output_available(model_odirname, allow_overwrite=False):
+    output_path = get_model_output_path(model_odirname)
+
+    if output_path.exists() and not allow_overwrite:
+        raise FileExistsError(
+            f"Model already exists: {output_path}. "
+            "Change MODEL_ODIRNAME or set ALLOW_MODEL_OVERWRITE = True intentionally."
+        )
+
+    return output_path
+
+
+def save_model_state(model, model_odirname, allow_overwrite=False):
+    output_path = ensure_model_output_available(model_odirname, allow_overwrite)
+
+    torch.save(model.state_dict(), output_path)
+    print(f"Saved model: {output_path}")
+    return output_path
 
 def main(input_dir,
          channels_to_load,
@@ -115,6 +178,8 @@ def main(input_dir,
          kernel_size,
          sigma,
          probability_blur,
+         horizontal_flip_prob,
+         vertical_flip_prob,
          degrees,
          translate,
          scale,
@@ -122,11 +187,12 @@ def main(input_dir,
          size,
          z_padding,
          loss_function, # not used for now
-         optimizer, # not used for now
+         optimizer_name, # not used for now
          learning_rate,
+         weight_decay,
          batch_size,
-         num_epochs, # not used for now
-         model, # not used for now
+         num_epochs,
+         model_name, # not used for now
          input_channels,
          feature_channels,
          output_channels,
@@ -136,6 +202,8 @@ def main(input_dir,
          device,
          seed):
     
+    save_run_globals()
+    ensure_model_output_available(model_odirname, ALLOW_MODEL_OVERWRITE)
     seed_everything(seed)
     
     grouped_input_mask_pairs = load_images(input_dir, mask_dir, channels_to_load)
@@ -143,12 +211,14 @@ def main(input_dir,
     splits = ordered_split(grouped_input_mask_pairs, split_train, split_val, split_test)
 
     transform_3d = ComposePair(
-        (
-        CenterCrop(size),
-        AdjustBrightness(brightness_factor, same_channel_brightness),
+        (AdjustBrightness(brightness_factor, same_channel_brightness),
         RandomAffine(degrees, translate, scale, shear),
         GaussianBlur(kernel_size, sigma, probability_blur),
-        DepthPadding(z_padding),)
+        DepthPadding(z_padding),
+        CenterCrop(size),
+        RandomHorizontalFlip(horizontal_flip_prob),
+        RandomVerticalFlip(vertical_flip_prob),)
+
     )
 
     train_dataset = BacteriaMaskPair(splits["train"], transform=transform_3d, generate_data = generate_data, num_images = num_images)
@@ -167,9 +237,18 @@ def main(input_dir,
     model = UNet(input_channels, output_channels, feature_channels, num_blocks = num_blocks, use_batchnorm = use_batchnorm, is_3d=True).to(device)
 
     class_weights = compute_class_weights_from_dataloader(train_dataloader, output_channels, device)
-    loss_fn = DiceWeightedCrossEntropyLoss(0.2, class_weights) # CrossEntropyLoss(weight=class_weights) #SoftDiceLoss() # FocalLoss(gamma=1.0)
+    loss_fn = DiceFocalLoss(
+            to_onehot_y=True,
+            softmax=True,
+            include_background=True,
+            smooth_dr=1.0,
+            smooth_nr=1.0,
+            lambda_dice=0.6,
+            gamma=1.0,
+            lambda_focal=0.4,
+        )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     train_losses, validation_losses = fit(num_epochs, optimizer, train_dataloader, validation_dataloader, model, loss_fn, device)
     confusion_matrix = test_model(test_dataloader, model, loss_fn, output_channels, device)
@@ -177,7 +256,7 @@ def main(input_dir,
     odirname = Path(model_odirname).parent
     odirname.mkdir(parents=True, exist_ok=True)
 
-    torch.save(model.state_dict(), f"{model_odirname}.pt")
+    save_model_state(model, model_odirname, ALLOW_MODEL_OVERWRITE)
 
     model_validation_preview(test_dataloader, model, odirname, device)
     
@@ -200,6 +279,8 @@ if __name__ == "__main__":
         KERNEL_SIZE,
         SIGMA,
         PROBABILITY_BLUR,
+        HORIZONTAL_FLIP_PROB,
+        VERTICAL_FLIP_PROB,
         DEGREES,
         TRANSLATE,
         SCALE,
@@ -209,6 +290,7 @@ if __name__ == "__main__":
         LOSS_FUNCTION,
         OPTIMIZER,
         LEARNING_RATE,
+        WEIGHT_DECAY,
         BATCH_SIZE,
         NUM_EPOCHS,
         MODEL,

@@ -13,7 +13,10 @@ def convert_row_numerical(row: str):
 
 def obtain_tile_position(tile_name):
 
-    tile_info = tile_name.split("_")[-1]
+    try:
+        tile_info = tile_name.stem
+    except:
+        tile_info = tile_name
 
     match = re.search(r'([A-Za-z]+)(\d+)', tile_info)
     row, column = match.groups()
@@ -29,7 +32,7 @@ def get_all_tiles_position_snake(tile_names):
 
     rows = sorted({row for _, row in raw})
     cols = sorted({col for col, _ in raw})
-    
+
     out = []
     for row in range(len(rows)):
         
@@ -69,6 +72,9 @@ def obtain_direction_to_remove_overlap(tile_pos, last_col):
 def get_all_tiles_directions_to_remove_overlap(tile_names: list[str]):
     all_tiles_positions = get_all_tiles_position_snake(tile_names)
 
+    if not all_tiles_positions:
+        return []
+
     last_col = max(col for col, _ in all_tiles_positions)
 
     all_tiles_directions = [obtain_direction_to_remove_overlap(tile_pos, last_col) for tile_pos in all_tiles_positions]
@@ -103,18 +109,17 @@ def compute_overlap_pixels(overlap, height, width, rounding_mode = "nearest"):
 
 
 def cut_overlap(image, pixels_to_remove_h, pixels_to_remove_w, directions_to_cut):
+    if pixels_to_remove_h == 0 and pixels_to_remove_w == 0:
+        return image
 
     idx = [slice(None)] * image.ndim
 
     for direction in directions_to_cut:
-
-        if direction == "top":
+        if direction == "top" and pixels_to_remove_h > 0:
             idx[-2] = slice(pixels_to_remove_h, None)
-        
-        elif direction == "left":
+        elif direction == "left" and pixels_to_remove_w > 0:
             idx[-1] = slice(pixels_to_remove_w, None)
-        
-        elif direction == "right":
-            idx[-1] = slice(-pixels_to_remove_w)
-    
+        elif direction == "right" and pixels_to_remove_w > 0:
+            idx[-1] = slice(None, -pixels_to_remove_w)
+
     return image[tuple(idx)]

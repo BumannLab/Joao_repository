@@ -45,6 +45,15 @@ def main(image_folder,
 
     image_paths = get_images_path(image_folder)
 
+    # TODO: REMOVE THIS AFTER
+    bad_tiles = list()
+    
+    for image in image_paths:
+        for idx in bad_tiles:
+            if idx in image.stem:
+                image_paths.pop(image_paths.index(image))
+
+
     sample_bins = None
 
     with Pool(processes=num_processors, maxtasksperchild=1) as pool:

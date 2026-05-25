@@ -2,7 +2,6 @@ import pytest
 import numpy as np
 
 from Voxel_Analysis.voxel_cluster_and_intensity_thresholding import (build_out_file_sufix,
-                                                                    slice_channel_threshold,
                                                                     voxel_channel_intensity_threshold,
                                                                     multi_channel_threshold_mask,
                                                                     )
@@ -26,25 +25,6 @@ class TestBuildOutFileSufix:
         result = build_out_file_sufix(threshold_conditions[1])
 
         assert result == expected_result
-
-
-class TestSliceChannelThreshold:
-    def test_slice_channel_threshold_valid_operators_no_channel_markers(self, threshold_conditions):
-        
-        expected_result = [("SYBRGold", ">", 200),
-                            ("DAPI", "<=", 100),
-                            ("CD68AL555", ">=", 100),
-                            ("LAMAL647", "<", 600)]
-        
-        result = slice_channel_threshold(threshold_conditions[0])
-
-        assert result == expected_result
-
-    def test_slice_channel_threshold_non_valid_operators(self, threshold_conditions):
-        
-        with pytest.raises(ValueError):
-            
-            slice_channel_threshold(threshold_conditions[1])
 
 
 class TestVoxelChannelIntensityThreshold:

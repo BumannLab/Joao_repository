@@ -10,39 +10,56 @@ from tqdm import tqdm
 from utils import get_images_path, read_image
 from ND2_Image_Processing.nd2_metadata_retrieval import *
 
+# TODO: Load metadata for one image and recycle it for all of the rest
 
-IMAGE_DIR = "/data/joao/mTBData/B2022.10246/SYBRGold_CD68AL555_LAMAL647_DAPI"
-NUM_PROCESSORS = 24
+
+IMAGE_DIR = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month"
+NUM_PROCESSORS = 15
+
+
+def write_tiff(path, image, metadata, resolution = None):
+    tiff.imwrite(
+        path,
+        image,
+        imagej=True,
+        metadata=metadata,
+        resolution=resolution,
+        )
 
 
 def analyse_clusters_and_pixels(args_iter):
+        
         image_path, odirname = args_iter
         
-        image, metadata = read_image(image_path, inc_metadata=True)
+        tpl = read_image(image_path, inc_metadata=True)
+
+        if tpl is None:
+            return 
+        
+        image, metadata = tpl
 
         image = np.max(image, axis=0)
 
-        channel_luts = extract_channel_colors_as_luts(metadata)
-        voxel_size = extract_voxel_size(metadata)
-        resolution = get_resolution(voxel_size)
-
         out_metadata = {
-             "LUTs":channel_luts,
-             "mode": "color",
-             "axes": "CYX",
-             "spacing": voxel_size["PhysicalSizeZ"],
-             "unit": "micron"
+        "mode": "color",
+        "axes": "CYX",
+        "unit": "micron"
         }
 
         out_path = f"{odirname}/MAX_{image_path.stem}.tif"
 
-        tiff.imwrite(
-            out_path,
-            image,
-            imagej=True,
-            metadata=out_metadata,
-            resolution=resolution
-            )
+        if metadata is None: # The file was corrupted so metadata will not be retrieved
+            write_tiff(out_path, image, out_metadata)
+            return 
+        
+        channel_luts = extract_channel_colors_as_luts(metadata)
+        voxel_size = extract_voxel_size(metadata)
+        resolution = get_resolution(voxel_size)
+
+        out_metadata["spacing"] = voxel_size["PhysicalSizeZ"]
+        out_metadata["LUTs"] = channel_luts
+
+        write_tiff(out_path, image, out_metadata, resolution)
 
 
 def main(image_dir, num_processers: int = 1):
@@ -53,7 +70,7 @@ def main(image_dir, num_processers: int = 1):
 
     images_path = get_images_path(image_dir)
     
-    with Pool(processes=num_processers) as pool:
+    with Pool(processes=num_processers, maxtasksperchild=1) as pool:
 
         args_iter = zip(
             images_path,
@@ -61,7 +78,7 @@ def main(image_dir, num_processers: int = 1):
         )
 
         for _ in tqdm(pool.imap(analyse_clusters_and_pixels,
-                        args_iter), total=len(images_path)):
+                        args_iter, chunksize=1), total=len(images_path)):
         
             continue
              
