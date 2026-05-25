@@ -2,260 +2,182 @@ from pathlib import Path
 
 import numpy as np
 from skimage.measure import label, regionprops
-from scipy.spatial.distance import cdist
+import matplotlib.pyplot as plt
 
-from utils import read_image
-
-IMAGE_FILE_2D = "mTB_segmentation/3Dvs2D/2D/2nd_model/model_test_performance.tif"
-IMAGE_FILE_3D = "mTB_segmentation/3Dvs2D/3D/2nd_model/model_test_performance.tif"
-
-# -----------------------------
-# Dice between two binary masks
-# -----------------------------
-def dice(mask1, mask2):
-    mask1 = mask1.astype(bool)
-    mask2 = mask2.astype(bool)
-
-    inter = np.logical_and(mask1, mask2).sum()
-    size = mask1.sum() + mask2.sum()
-
-    if size == 0:
-        return 1.0
-
-    return 2 * inter / size
+from Scripts.utils import read_image
 
 
-# -----------------------------
-# Extract objects from mask
-# -----------------------------
+IMAGE_FILE_2D = ""
+IMAGE_FILE_3D = ""
+
+
 def get_objects(mask):
-    labeled = label(mask > 0)
+    """
+    Convert binary mask into connected components (objects).
+    """
+
+    labeled = label(mask > 0, connectivity=2)
     props = regionprops(labeled)
 
     objects = []
+
     for p in props:
+
+        obj_mask = labeled == p.label
+
         objects.append({
             "label": p.label,
-            "coords": p.coords,
-            "centroid": p.centroid,
+            "mask": obj_mask,
             "area": p.area
         })
 
     return labeled, objects
 
 
-# -----------------------------
-# Match objects (simple centroid matching)
-# -----------------------------
-def match_objects(gt_objs, pred_objs, dist_thresh=10):
+def dice_score(mask1, mask2):
+    """
+    Compute Dice overlap between two binary masks.
+    """
 
-    if len(gt_objs) == 0 or len(pred_objs) == 0:
-        return [], set(), set()
+    intersection = np.logical_and(mask1, mask2).sum()
 
-    gt_centroids = np.array([o["centroid"] for o in gt_objs])
-    pred_centroids = np.array([o["centroid"] for o in pred_objs])
+    size1 = mask1.sum()
+    size2 = mask2.sum()
 
-    dist_matrix = cdist(gt_centroids, pred_centroids)
+    if size1 + size2 == 0:
+        return 1.0
+
+    return (2 * intersection) / (size1 + size2)
+
+
+def match_objects(gt_objects, pred_objects, dice_threshold=0.3):
+    """
+    Match GT objects to predicted objects using Dice overlap.
+    """
 
     matches = []
     matched_gt = set()
     matched_pred = set()
 
-    while True:
-        i, j = np.unravel_index(np.argmin(dist_matrix), dist_matrix.shape)
-        min_dist = dist_matrix[i, j]
+    for gt_idx, gt_obj in enumerate(gt_objects):
 
-        if min_dist > dist_thresh:
-            break
+        best_pred = None
+        best_dice = 0
 
-        if i in matched_gt or j in matched_pred:
-            dist_matrix[i, j] = np.inf
-            continue
+        for pred_idx, pred_obj in enumerate(pred_objects):
 
-        matches.append((i, j))
-        matched_gt.add(i)
-        matched_pred.add(j)
+            d = dice_score(gt_obj["mask"], pred_obj["mask"])
 
-        dist_matrix[i, :] = np.inf
-        dist_matrix[:, j] = np.inf
+            if d > dice_threshold and d > best_dice:
+                best_dice = d
+                best_pred = pred_idx
+
+        if best_pred is not None:
+            matches.append((gt_idx, best_pred, best_dice))
+            matched_gt.add(gt_idx)
+            matched_pred.add(best_pred)
 
     return matches, matched_gt, matched_pred
 
 
-# -----------------------------
-# Main evaluation function
-# -----------------------------
-def evaluate_objects(gt_mask, pred_mask, dist_thresh=10):
+def visualize(gt, pred, idx=None):
+    plt.figure(figsize=(8, 4))
 
-    gt_labeled, gt_objs = get_objects(gt_mask)
-    pred_labeled, pred_objs = get_objects(pred_mask)
+    plt.subplot(1, 2, 1)
+    plt.imshow(gt, cmap="gray")
+    plt.title(f"GT {idx}")
+    plt.axis("off")
 
-    matches, matched_gt, matched_pred = match_objects(
-        gt_objs, pred_objs, dist_thresh
-    )
+    plt.subplot(1, 2, 2)
+    plt.imshow(pred, cmap="gray")
+    plt.title(f"Pred {idx}")
+    plt.axis("off")
 
-    dice_scores = []
-
-    # compute Dice for matched objects
-    for gi, pi in matches:
-        gt_obj = gt_labeled == gt_objs[gi]["label"]
-        pred_obj = pred_labeled == pred_objs[pi]["label"]
-
-        d = dice(gt_obj, pred_obj)
-        dice_scores.append(d)
-
-    # missed and extra objects
-    fn = len(gt_objs) - len(matched_gt)
-    fp = len(pred_objs) - len(matched_pred)
-
-    results = {
-        "mean_object_dice": np.mean(dice_scores) if dice_scores else 0.0,
-        "median_object_dice": np.median(dice_scores) if dice_scores else 0.0,
-        "num_gt_objects": len(gt_objs),
-        "num_pred_objects": len(pred_objs),
-        "tp_objects": len(matches),
-        "fp_objects": fp,
-        "fn_objects": fn,
-        "dice_per_object": dice_scores
-    }
-
-    return results
+    plt.show()
 
 
-def evaluate_dataset(gt_list, pred_list, dist_thresh=10):
-    """
-    gt_list: list of GT masks (2D arrays)
-    pred_list: list of prediction masks (2D arrays)
-    """
-
-    assert len(gt_list) == len(pred_list)
-
-    all_dice = []
-    all_tp = []
-    all_fp = []
-    all_fn = []
-
-    for gt, pred in zip(gt_list, pred_list):
-
-        results = evaluate_objects(
-            gt_mask=gt,
-            pred_mask=pred,
-            dist_thresh=dist_thresh
-        )
-
-        # collect per-image results
-        all_dice.append(results["dice_per_object"])
-        all_tp.append(results["tp_objects"])
-        all_fp.append(results["fp_objects"])
-        all_fn.append(results["fn_objects"])
-
-    # flatten Dice across ALL objects in dataset
-    all_dice_flat = np.concatenate([d for d in all_dice if len(d) > 0])
-
-    return {
-        "mean_object_dice": np.mean(all_dice_flat) if len(all_dice_flat) > 0 else 0,
-        "median_object_dice": np.median(all_dice_flat) if len(all_dice_flat) > 0 else 0,
-        "mean_tp_objects": np.mean(all_tp),
-        "mean_fp_objects": np.mean(all_fp),
-        "mean_fn_objects": np.mean(all_fn),
-        "num_images": len(gt_list)
-    }
-
-
-import numpy as np
-
-def evaluate_dataset_2(gt_list, pred_list):
+def evaluate_dataset(gt_list, pred_list, dice_threshold=0.3, visualize=False):
 
     TP_objects = 0
-    FP_objects = 0
     FN_objects = 0
+    FP_objects = 0
 
     TN_images = 0
-    FP_images = 0
-    TP_images = 0
-    FN_images = 0
 
-    for gt, pred in zip(gt_list, pred_list):
+    all_dice = []
+
+    for i, (gt, pred) in enumerate(zip(gt_list, pred_list)):
 
         gt_has_objects = np.any(gt > 0)
         pred_has_objects = np.any(pred > 0)
 
-        # -------------------------
-        # IMAGE-LEVEL LOGIC
-        # -------------------------
+        if visualize:
+            visualize(gt, pred, i)
+
+        # NEGATIVE IMAGES
         if not gt_has_objects:
-            # empty ground truth image
 
-            if not pred_has_objects:
-                TN_images += 1
+            if pred_has_objects:
+
+                # count ALL predicted objects as FP
+                _, pred_objects = get_objects(pred)
+                FP_objects += len(pred_objects)
+
             else:
-                FP_images += 1
+                TN_images += 1
 
-            continue  # no object-level evaluation
+            continue
 
-        # -------------------------
-        # IMAGE HAS OBJECTS
-        # -------------------------
-        gt_labeled, gt_objs = get_objects(gt)
-        pred_labeled, pred_objs = get_objects(pred)
 
-        matches, matched_gt, matched_pred = match_objects(gt_objs, pred_objs)
+        # POSITIVE IMAGES
+        _, gt_objects = get_objects(gt)
+        _, pred_objects = get_objects(pred)
 
+        matches, matched_gt, matched_pred = match_objects(
+            gt_objects,
+            pred_objects,
+            dice_threshold=dice_threshold
+        )
+
+        # TP objects
         TP_objects += len(matches)
-        FN_objects += len(gt_objs) - len(matched_gt)
-        FP_objects += len(pred_objs) - len(matched_pred)
 
-        if len(matches) > 0:
-            TP_images += 1
-        else:
-            FN_images += 1
+        # FN objects
+        FN_objects += len(gt_objects) - len(matched_gt)
+
+        # store Dice
+        for _, _, d in matches:
+            all_dice.append(d)
+
+    # metrics
+    recall = TP_objects / (TP_objects + FN_objects) if (TP_objects + FN_objects) > 0 else 0
+
+    specificity = TN_images / (TN_images + (len(gt_list) - TN_images)) if len(gt_list) > 0 else 0
+
+    mean_dice = np.mean(all_dice) if len(all_dice) > 0 else 0
+
+    precision = TP_objects / (TP_objects + FP_objects) if (TP_objects + FP_objects) > 0 else 0
 
     return {
-        # image-level
-        "TN_images": TN_images,
-        "FP_images": FP_images,
-        "TP_images": TP_images,
-        "FN_images": FN_images,
-
-        # object-level
         "TP_objects": TP_objects,
-        "FP_objects": FP_objects,
         "FN_objects": FN_objects,
+        "FP_objects": FP_objects,
+        "TN_images": TN_images,
+        "recall": recall,
+        "precision": precision,
+        "specificity": specificity,
+        "mean_object_dice": mean_dice
     }
 
-
 def main(image_file_2d, image_file_3d):
+    
+    images_2d = read_image(Path(image_file_2d))
+    gt_images = images_2d[:, 1]
+    pred_2d = images_2d[:, -1]
 
-    image_2d = read_image(Path(image_file_2d))
+    images_3d = read_image(Path(image_file_3d))
+    pred_3d_proj = np.max(images_3d, axis = 1)[:, -1]
 
-    gt = image_2d[:, 1]
-    pred_2d = image_2d[:, -1]
-    print(pred_2d.shape)
+    print("-2D-\n", evaluate_dataset(gt_images, pred_2d, dice_threshold=0.2))
+    print("-3D-\n", evaluate_dataset(gt_images, pred_3d_proj, dice_threshold=0.2))
 
-    image_3d = read_image(Path(image_file_3d))
-    pred_3d_proj = np.max(image_3d, axis = 1)[:, -1]
-    print(pred_3d_proj.shape)
-
-    results_2d = evaluate_dataset(gt, pred_2d)
-    results_3d = evaluate_dataset(gt, pred_3d_proj)
-
-    print(results_2d)
-    print(results_3d)
-
-if __name__=="__main__":
-    main(IMAGE_FILE_2D,
-         IMAGE_FILE_3D)
-
-# -----------------------------
-# Example usage
-# -----------------------------
-
-# gt = your ground truth mask (2D)
-# pred_2d = 2D model output
-# pred_3d_proj = max(z) projection of 3D output
-
-# results_2d = evaluate_objects(gt, pred_2d)
-# results_3d = evaluate_objects(gt, pred_3d_proj)
-
-# print(results_2d)
-# print(results_3d)
