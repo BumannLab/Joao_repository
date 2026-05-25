@@ -162,6 +162,68 @@ def evaluate_dataset(gt_list, pred_list, dist_thresh=10):
     }
 
 
+import numpy as np
+
+def evaluate_dataset_2(gt_list, pred_list):
+
+    TP_objects = 0
+    FP_objects = 0
+    FN_objects = 0
+
+    TN_images = 0
+    FP_images = 0
+    TP_images = 0
+    FN_images = 0
+
+    for gt, pred in zip(gt_list, pred_list):
+
+        gt_has_objects = np.any(gt > 0)
+        pred_has_objects = np.any(pred > 0)
+
+        # -------------------------
+        # IMAGE-LEVEL LOGIC
+        # -------------------------
+        if not gt_has_objects:
+            # empty ground truth image
+
+            if not pred_has_objects:
+                TN_images += 1
+            else:
+                FP_images += 1
+
+            continue  # no object-level evaluation
+
+        # -------------------------
+        # IMAGE HAS OBJECTS
+        # -------------------------
+        gt_labeled, gt_objs = get_objects(gt)
+        pred_labeled, pred_objs = get_objects(pred)
+
+        matches, matched_gt, matched_pred = match_objects(gt_objs, pred_objs)
+
+        TP_objects += len(matches)
+        FN_objects += len(gt_objs) - len(matched_gt)
+        FP_objects += len(pred_objs) - len(matched_pred)
+
+        if len(matches) > 0:
+            TP_images += 1
+        else:
+            FN_images += 1
+
+    return {
+        # image-level
+        "TN_images": TN_images,
+        "FP_images": FP_images,
+        "TP_images": TP_images,
+        "FN_images": FN_images,
+
+        # object-level
+        "TP_objects": TP_objects,
+        "FP_objects": FP_objects,
+        "FN_objects": FN_objects,
+    }
+
+
 def main(image_file_2d, image_file_3d):
 
     image_2d = read_image(Path(image_file_2d))
