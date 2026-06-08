@@ -1,13 +1,11 @@
 import random
-from collections import defaultdict
 
 import torch
 from torchvision.transforms import InterpolationMode
 import torchvision.transforms.functional as F
-import tifffile as tiff
-import matplotlib.pyplot as plt
+import numpy as np
 
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.utils import get_class
+from Scripts.NeuralNetworkSegmentation.utils import get_class
 
 ORDER_TO_INTERPOLATION = {
     0: InterpolationMode.NEAREST,
@@ -40,6 +38,7 @@ class AdjustBrightness:
             value = random.uniform(self.brightness[0], self.brightness[1])
             brightness_factors.fill_(value)
         else:
+            # change this to random call not torch
             brightness_factors.uniform_(
                 self.brightness[0], self.brightness[1])
         
@@ -201,7 +200,7 @@ def build_transform_pipeline(config_transforms):
         if transform in label_transforms:
             apply_mask = True
 
-        _transform = get_class(transform, ["ZOrganized_scripts.NeuralNetworkSegmentationConfig.transforms"])
+        _transform = get_class(transform, ["Scripts.NeuralNetworkSegmentation.transforms"])
         _params = dict(raw_transforms.get(transform, {})) # TODO: ASSERT PARAMS ARE EQUAL FOR BOTH RAW AND LABEL
 
         steps.append((_transform(**_params), apply_input, apply_mask))
@@ -222,31 +221,29 @@ class Compose:
 
         return img
     
+class AugmentationTransformer:
+    def __init__(self, split_config, seed):
+    
+        """Factory class for creating data augmentation pipelines."""
 
-def create_split_augmentations(seed, split_config):
+        self.split_config = split_config
+        self.seed = seed
 
-    raw_transforms = create_transforms(seed, split_config.get("raw", {}))
-    label_transforms = create_transforms(seed, split_config.get("label", {}))
+    def raw_transform(self):
+        return self._create_transform("raw")
 
-    return raw_transforms, label_transforms
+    def label_transform(self):
+        return self._create_transform("label")
 
+    def _create_transform(self, name):
+        assert name in self.phase_config, f"Could not find {name} transform"
 
-def create_transforms(seed, phase_config):
+        return Compose([self._create_augmentation(augmentation_name) for augmentation_name in self.phase_config[name]])
+    
+    def _create_augmentation(self, augmentation):
 
-    transforms = list()
+        _transform = get_class(augmentation, ["Scripts.NeuralNetworkSegmentation.transforms"])
+        self.phase_config["random_state"] = np.random.RandomState(self.seed)
+        _params =  self.phase_config.get(augmentation, {})
+        return _transform(**_params)
 
-    for transform in phase_config:
-
-        augmentation = create_augmentation(seed, phase_config, transform)
-        transforms.append(augmentation)
-
-    return Compose(transforms)
-
-
-def create_augmentation(seed, phase_config, transform):
-
-    _transform = get_class(transform, ["ZOrganized_scripts.NeuralNetworkSegmentationConfig.transforms"])
-    _params =  phase_config.get(transform, {})
-    _params["random_state"] = seed
-
-    return _transform(**_params)

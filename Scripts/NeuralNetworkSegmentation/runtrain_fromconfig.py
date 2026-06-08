@@ -1,16 +1,16 @@
 import torch
 
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.optimizer import get_optimizer, get_lr_scheduler
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.models.unet import get_model
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.loss import get_loss
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.config import load_config_yaml
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.data import build_dataloaders
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.train import ModelTrainer
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.utils import build_seed_from_time, get_save_dir_model_name
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.metrics import get_eval_criterion
+from Scripts.NeuralNetworkSegmentation.optimizer import get_optimizer, get_lr_scheduler
+from Scripts.NeuralNetworkSegmentation.models.unet import get_model
+from Scripts.NeuralNetworkSegmentation.loss import get_loss
+from Scripts.NeuralNetworkSegmentation.config import load_config_yaml
+from Scripts.NeuralNetworkSegmentation.data import build_dataloaders
+from Scripts.NeuralNetworkSegmentation.train import ModelTrainer
+from Scripts.NeuralNetworkSegmentation.metrics import get_eval_criterion
+from Scripts.NeuralNetworkSegmentation.utils import build_seed_from_time, get_save_dir_model_name, seed_everything
 
 
-CONFIG_PATH = "/data/joao/Materials/Joao_repository/ZOrganized_scripts/NeuralNetworkSegmentationConfig/config.yml"
+CONFIG_PATH = "/home/Documents/Joao_repository/Scripts/NeuralNetworkSegmentation/config.yml"
 
 
 def main(
@@ -23,6 +23,7 @@ def main(
 
     seed = config.pop("seed", build_seed_from_time()) # If seed does not exist create one and append it to config
     config["seed"] = seed
+    seed_everything(seed)
     
     device = config.pop("device", torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu") # If device does search whether gpu exists and use it if not use cpu
     config["device"] = device # write it to config

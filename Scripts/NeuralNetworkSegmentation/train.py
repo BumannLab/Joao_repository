@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.models.unet import is_model_2d
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.metrics import compute_confusion_matrix
+from Scripts.NeuralNetworkSegmentation.models.unet import is_model_2d
+from Scripts.NeuralNetworkSegmentation.metrics import compute_confusion_matrix
 
 # TODO: PASS THIS TO UTILS OR LOSS FN
 def compute_class_weights_from_dataloader(dataloader, num_classes, device):  #conver the script to run using the array of train not the dataloader
@@ -213,7 +213,6 @@ class ModelTrainer:
             
             # add the singleton z-dimension to the output
             output = torch.unsqueeze(output, dim=-3)
-            print(output.shape)
             logits = torch.unsqueeze(logits, dim=-3)
         
         else:

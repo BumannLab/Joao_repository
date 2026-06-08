@@ -9,7 +9,7 @@ from skimage.measure import label, regionprops
 from monai.inferers import SlidingWindowInferer
 
 from utils import get_images_path, read_image, AXES
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.models.unet import UNet
+from Scripts.NeuralNetworkSegmentation.models.unet import UNet
 
 IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1"
 CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"

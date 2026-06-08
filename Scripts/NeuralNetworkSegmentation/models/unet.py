@@ -1,7 +1,7 @@
 from torch import nn
 
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.utils import get_class
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.models.unet_core import ConvolutionBlock, Encoder, Decoder
+from Scripts.NeuralNetworkSegmentation.utils import get_class
+from Scripts.NeuralNetworkSegmentation.models.unet_core import ConvolutionBlock, Encoder, Decoder
 
 #TODO Add dropout
 #TODO Replace channels by feature map (variable name)
@@ -74,7 +74,7 @@ class UNet3D(UNet):
 
 
 def get_model(model_config):
-    model_class = get_class(model_config["name"], modules=["ZOrganized_scripts.NeuralNetworkSegmentationConfig.models.unet"])
+    model_class = get_class(model_config["name"], modules=["Scripts.NeuralNetworkSegmentation.models.unet"])
     return model_class(**model_config)
 
 

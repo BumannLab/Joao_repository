@@ -32,9 +32,9 @@ eval_criterion:
   metric: "precision"
 
 data:
-  raw_path: "/data/joao/Materials/Joao_repository/Data/DATASET_COMPARISON/3D_comparison/Dataset_threshold_800/inputs/MAX" # Path to the input images used for training.
+  raw_path: "/home/MockDataset/inputs" # Path to the input images used for training.
   channels_to_load: [0] # Channel indices to load from each image.
-  label_path: "/data/joao/Materials/Joao_repository/Data/DATASET_COMPARISON/3D_comparison/Dataset_threshold_800/masks/MAX" # Path to the segmentation masks matching the input images.
+  label_path: "/home/MockDataset/masks" # Path to the segmentation masks matching the input images.
   
   split_train: 0.6 # Fraction of the dataset assigned to the training split.
   split_validation: 0.2 # Fraction of the dataset assigned to the validation split.

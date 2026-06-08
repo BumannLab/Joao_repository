@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from monai.metrics import DiceMetric, MeanIoU, get_confusion_matrix
 from skimage import measure
 
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.utils import convert_to_numpy
+from Scripts.NeuralNetworkSegmentation.utils import convert_to_numpy
 
 
 class BlobsAveragePrecision:
