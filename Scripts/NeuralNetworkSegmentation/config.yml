@@ -31,79 +31,39 @@ eval_criterion:
   min_instance_size: null
   metric: "precision"
 
-data:
-  raw_path: "/home/MockDataset/inputs" # Path to the input images used for training.
-  channels_to_load: [0] # Channel indices to load from each image.
+loaders:
+
+  dataset: standard
+
+  raw_path: /home/MockDataset/inputs # Path to the input images used for training.
+  channels_to_load: [0,1] # Channel indices to load from each image.
+  
   label_path: "/home/MockDataset/masks" # Path to the segmentation masks matching the input images.
   
   split_train: 0.6 # Fraction of the dataset assigned to the training split.
-  split_validation: 0.2 # Fraction of the dataset assigned to the validation split.
+  split_val: 0.2 # Fraction of the dataset assigned to the validation split.
   split_test: 0.2 # Fraction of the dataset assigned to the test split.
   
-  batch_size: 32
+  batch_size: 2
   num_workers: 1
 
-transforms:
+  generate_data: False # Whether to create a generated dataset before training.
+  num_images: 15 # Number of images/events to generate when data generation is enabled.
 
-  data_generation:
-    generate_data: False # Whether to create a generated dataset before training.
-    num_images: 15 # Number of images/events to generate when data generation is enabled.
+  train: 
+    transforms:
+      - name: CenterCrop
 
-  train:
+  val: null
 
-    raw:
-      RandomAffine:
-        degrees: 180
-        translate:  [0.2, 0.2]
-        scale:  [0.85, 1.15]
-        shear:  [-8, 8]
+  test: null
 
-      GaussianBlur:
-        kernel: 3
-        sigma:  [0.1, 1.5]
-        blur_probability: 0.3
-      
-      CenterCrop:
-        size: 128
+trainer:
+  num_epochs: 50
 
-      AdjustBrightness:
-        brightness: [0.5, 2]
-        same_channels_brightness: False
-      
-
-    label:
-      RandomAffine:
-        degrees: 180
-        translate: [0.2, 0.2]
-        scale: [0.85, 1.15]
-        shear: [-8, 8]
-
-      CenterCrop:
-        size: 128
-      
-  
-  val:
-    raw:
-      CenterCrop:
-        size: 128
-
-    label:
-      CenterCrop:
-        size: 128
-
-  test:
-    raw:
-      CenterCrop:
-        size: 128
-
-
-    label:
-      CenterCrop:
-        size: 128
-
-num_epochs: 50
 
 save_point:
   out_dir: "/data/joao/Materials/Joao_repository/mTB_segmentation/testing_config_run"
   out_model_name: "model_1"
     
+seed: 47
