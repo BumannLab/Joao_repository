@@ -1,97 +1,205 @@
+from __future__ import annotations
+
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
+import random
+from typing import Any
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from Scripts.NeuralNetworkSegmentation.transforms import create_split_augmentations
 from Scripts.utils import get_images_path, read_image
+from Scripts.NeuralNetworkSegmentation.transforms import build_transform_pipeline
 
-class BacteriaMaskDataset(Dataset):
-    def __init__(self,
-                samples,
-                raw_transform=None,
-                label_transform = None,
-                generate_data=False,
-                num_images=None
-            ):
+
+@dataclass(frozen=True)
+class ImageMaskSample:
+    label: int
+    file_name: str
+    input_path: Path
+    mask_path: Path
+
+
+class ConfigDataset(Dataset):
+    def __getitem__(self, index):
+        raise NotImplementedError
+
+    def __len__(self):
+        raise NotImplementedError
+
+    @classmethod
+    def create_datasets(cls, dataset_config: dict, phase: str):
+        raise NotImplementedError
+    
+
+class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
+
+    def __init__(
+        self,
+        samples: list[ImageMaskSample],
+        phase: str,
+        channels_to_load = None,
+        transform=None,
+        generate_data: bool = False,
+        num_images: int = 1,
+    ):
+        if phase not in {"train", "val", "test"}:
+            raise ValueError("phase must be one of: train, val, test.")
+
         self.samples = samples
-        self.raw_transform = raw_transform
-        self.label_transform = label_transform
+        self.phase = phase
+        self.channels_to_load = channels_to_load,
+        self.transform = transform
         self.generate_data = generate_data
-        self.num_images = num_images
+        self.num_images = max(int(num_images), 1)
 
     def __len__(self):
         if self.generate_data:
             return len(self.samples) * self.num_images
-        
+
         return len(self.samples)
-    
+
     def __getitem__(self, idx: int):
         if self.generate_data:
             idx = idx // self.num_images
 
-        sample = self.samples[idx]
-
-        label, file_name, input_image, label_image = sample # not using file_name neither label but can be helpful for future
-        
-        # show_input_mask_overlay(input_image.astype(np.float32), label_image.astype(np.float32))
-        
+        # sample = self.samples[idx]
+        print(self.samples[idx].file_name)
+        input_image, mask_image = self.load_sample_arrays(idx)
         input_tensor = torch.from_numpy(input_image / 65535).to(torch.float32)
-        label_tensor = torch.from_numpy(label_image / 255).to(torch.long)
+        mask_tensor = torch.from_numpy(mask_image / 255).to(torch.long)
 
-        if self.raw_transform:
-            input_tensor = self.raw_transform(input_tensor)
+        if self.transform is not None:
+            input_tensor, mask_tensor = self.transform(input_tensor, mask_tensor)
 
-        if self.label_transform:
-            label_tensor = self.label_transform(label_tensor)
+        if input_tensor.ndim == 4 and mask_tensor.ndim == 4:
+            input_tensor = input_tensor.permute(1, 0, 2, 3)
+            mask_tensor = mask_tensor.permute(1, 0, 2, 3)
 
-        # show_input_mask_overlay(input_tensor.detach().cpu().numpy().astype(np.float32), label_tensor.detach().cpu().numpy().astype(np.float32))
+        return input_tensor, mask_tensor
 
-        input_tensor = input_tensor.permute(1, 0, 2, 3) 
-        label_tensor = label_tensor.permute(1, 0, 2, 3) 
+    def load_sample_arrays(self, idx):
+        raise NotImplementedError
 
-        return input_tensor, label_tensor
+    @classmethod # Initiates an instance of the class
+    def create_datasets(cls, splits, config: dict, phase: str):
+        
+        loaders_config = config["loaders"]
+        
+        assert phase in loaders_config, f"{phase} not found in config"
+        
+        channels_to_load = loaders_config.get("channels_to_load", [])
+
+        phase_config = loaders_config
+        phase_transforms_config = phase_config.get("transforms", {})
+        seed = config["seed"]
+
+        phase_transform = build_transform_pipeline(phase_transforms_config, seed)
+        
+        generate_data = bool(loaders_config.get("generate_data", False))
+        num_images = int(loaders_config.get("num_images", 1))
+
+        return cls(
+                splits[phase],
+                phase=phase,
+                channels_to_load = channels_to_load,
+                transform=phase_transform,
+                generate_data=generate_data if phase == "train" else False,
+                num_images=num_images,
+            )
+
+
+class StandardMycobacteriumTuberculosisDataset(BaseMycobacteriumTuberculosisDataset):
+    def __init__(
+        self,
+        samples: list[ImageMaskSample],
+        phase: str,
+        channels_to_load: list[int] = None,
+        transform=None,
+        generate_data: bool = False,
+        num_images: int = 1,
+    ):
+        super().__init__(
+            samples,
+            phase,
+            channels_to_load,
+            transform=transform,
+            generate_data=generate_data,
+            num_images=num_images,
+        )
+
+
+        self.loaded_samples = [
+            (read_input(sample.input_path, self.channels_to_load), read_mask(sample.mask_path))
+            for sample in self.samples
+        ]
+
+    def load_sample_arrays(self, idx):
+        return self.loaded_samples[idx]
+
+
+class LazyMycobacteriumTuberculosisDataset(BaseMycobacteriumTuberculosisDataset):
+    def __init__(
+        self,
+        samples: list[ImageMaskSample],
+        phase: str,
+        channels_to_load: list[int] = None,
+        transform=None,
+        generate_data: bool = False,
+        num_images: int = 1,
+    ):
+    
+        super().__init__(
+            samples,
+            phase,
+            channels_to_load,
+            transform=transform,
+            generate_data=generate_data,
+            num_images=num_images,
+        )
+    
+    def load_sample_arrays(self, idx):
+        sample = self.samples[idx]
+        return read_input(sample.input_path, self.channels_to_load), read_mask(sample.mask_path)
 
 
 def read_input(input_path: Path, channels_to_load: list | None = None):
-
-    _input = read_image(input_path)
+    input_image = read_image(input_path)
 
     if channels_to_load:
-        _input = np.take(_input, indices = channels_to_load, axis = -3)
-    
-    while _input.ndim != 4:
-        # If image shape is DxHxW -> this will break the code forward
-        _input = np.expand_dims(_input, axis=0)
+        input_image = np.take(input_image, indices=channels_to_load, axis=-3)
 
-    return _input
+    while input_image.ndim != 4:
+        input_image = np.expand_dims(input_image, axis=0)
+
+    return input_image
 
 
 def read_mask(mask_path: Path):
-
     mask = read_image(mask_path).astype(np.uint8)
 
     mask[mask > 0] = 255
 
     while mask.ndim != 4:
-        # If image shape is DxHxW -> this will break the code forward
         mask = np.expand_dims(mask, axis=-3)
 
     return mask
 
 
-def load_images(
+def collect_samples(
     input_path: str | Path,
     mask_path: str | Path,
-    channels_to_load: list[int] | None = None,
-) -> dict[int, list[tuple[str, np.ndarray, np.ndarray]]]:
-    
-    input_paths = get_images_path(input_path)
-    mask_paths = get_images_path(mask_path)
+):
 
-    if len(input_paths) != len(mask_paths):
+    input_paths = get_images_path(input_path, ".tif", ".tiff")
+    mask_paths = get_images_path(mask_path, ".tif", ".tiff")
+
+    assert input_paths, "No input paths found"
+    assert mask_paths, "No mask paths found"
+
+    if len(input_paths) != len(mask_paths):  
         raise ValueError(
             f"Found {len(input_paths)} input images but {len(mask_paths)} masks."
         )
@@ -101,45 +209,49 @@ def load_images(
     if input_stems != mask_stems:
         raise ValueError("Input and mask files must have matching sorted stems.")
 
-    grouped_pairs = defaultdict(list)
+    grouped_samples = defaultdict(list)
     for input_file, mask_file in zip(input_paths, mask_paths):
         file_name = input_file.stem
         label = 1 if "positive" in file_name.lower() else 0
+        grouped_samples[label].append(
+            ImageMaskSample(
+                label=label,
+                file_name=file_name,
+                input_path=Path(input_file),
+                mask_path=Path(mask_file),
+            )
+        )
 
-        input_image = read_input(input_file, channels_to_load)
-        mask_image = read_mask(mask_file)
-        grouped_pairs[label].append((label, file_name, input_image, mask_image))
-
-    return grouped_pairs
+    return grouped_samples
 
 
 def ordered_split(
-    group_pairs: dict[dict[np.ndarray]],
+    grouped_samples: dict[dict[np.ndarray]],
     train_frac: float,
     val_frac: float,
-    test_frac: float,
+    test_frac: float | None = None,
 ):
+    if test_frac is None:
+        assert abs(train_frac + val_frac - 1) == 0
+
     assert abs(train_frac + val_frac + test_frac - 1) == 0
 
+    n_negatives = len(grouped_samples[0])
+    n_positives = len(grouped_samples[1])
+
     # Generate random permutation for each positive vs negative tile
-    p0 = np.random.permutation(len(group_pairs[0]))
-    p1 = np.random.permutation(len(group_pairs[1]))
+    p0 = np.random.permutation(n_negatives)
+    p1 = np.random.permutation(n_positives)
 
     # Extract from the dictionary of positive and negative tiles the name&input&mask by order of the permutations
-    group_pairs0 = [group_pairs[0][i] for i in p0]
-    group_pairs1 = [group_pairs[1][i] for i in p1]
+    group_pairs0 = [grouped_samples[0][i] for i in p0]
+    group_pairs1 = [grouped_samples[1][i] for i in p1]
 
-    n_neg = len(group_pairs0)
-    n_pos = len(group_pairs1)
+    tr_neg = int(round(n_negatives * train_frac))
+    va_neg = int(round(n_negatives * val_frac))
 
-    # ---- Split each class independently (FIXED) ----
-    tr_neg = int(round(n_neg * train_frac))
-    va_neg = int(round(n_neg * val_frac))
-    te_neg = n_neg - tr_neg - va_neg
-
-    tr_pos = int(round(n_pos * train_frac))
-    va_pos = int(round(n_pos * val_frac))
-    te_pos = n_pos - tr_pos - va_pos
+    tr_pos = int(round(n_positives * train_frac))
+    va_pos = int(round(n_positives * val_frac))
 
     neg_ptr = 0
     pos_ptr = 0
@@ -160,149 +272,147 @@ def ordered_split(
     splits = {
         "train": take_split(tr_neg, tr_pos),
         "val":   take_split(va_neg, va_pos),
-        "test":  take_split(te_neg, te_pos),
     }
+
+    if test_frac:
+        te_neg = n_negatives - tr_neg - va_neg
+        te_pos = n_positives - tr_pos - va_pos
+        splits["test"] = take_split(te_neg, te_pos)
 
     return splits
 
 
-def build_datasets(config_data, config_transforms):
+def build_datasets(config):
 
-    grouped_samples = load_images(
-        config_data["raw_path"],
-        config_data["label_path"],
-        config_data.get("channels_to_load", [0]),
+    loaders_config = config["loaders"]
+
+    grouped_sample_paths = collect_samples(
+        loaders_config["raw_path"],
+        loaders_config["label_path"],
     )
 
-    train_frac = config_data.get("split_train", 0.7) 
-    val_frac = config_data.get("split_validation", 0.15) 
-    test_frac = config_data.get("split_test", 0.15) 
-    
+    train_frac = loaders_config.get("split_train", 0.6) 
+    val_frac = loaders_config.get("split_validation", 0.2)
+
+    # TODO: Handle if test fraction is None or not present 
+    # This will have wide different things, first the split will not happen for the test
+    # Computing the final confusion matrix is done over the test set so this would perhaps change
+    # Probably add smth like if current epoch == n_epochs, save model
+    # If early stop is added the check would be different like, or just add like
+    # a boolean to the current epoch == n epochs and not early_stop, where early stop is like
+    # max_eval_score > eval_score: early_stop_count += 1; if early_stop_count == threhsold; early_stop == true
+    # Seems complex but for now this is enough
+    # TODO: Also handle in the case that the phase contains a path to a folder
+    # would perhaps change a few things but i dont know for certain
+    test_frac = loaders_config.get("split_test", 0.2)     
+
     splits = ordered_split(
-        grouped_samples,
+        grouped_sample_paths,
         train_frac,
         val_frac,
         test_frac
     )
 
-    train_raw_augmentations, train_label_augmentations = create_split_augmentations(config_transforms.get("train", {}))
-    val_raw_augmentations, val_label_augmentations = create_split_augmentations(config_transforms.get("val", {}))
-    test_raw_augmentations, test_label_augmentations = create_split_augmentations(config_transforms.get("test", {}))
-
-    generate_data = bool(config_data.get("generate_data", False))
-    num_images = int(config_data.get("num_images", 0))
-
-    return  {
-        "train": BacteriaMaskDataset(
-            splits["train"],
-            raw_transform=train_raw_augmentations,
-            label_transform=train_label_augmentations,
-            generate_data=generate_data,
-            num_images=num_images,
-        ),
-        "val": BacteriaMaskDataset(
-            splits["val"],
-            raw_transform=val_raw_augmentations,
-            label_transform=val_label_augmentations,
-        ),
-        "test": BacteriaMaskDataset(
-            splits["test"],
-            raw_transform=test_raw_augmentations,
-            label_transform=test_label_augmentations,
-        ),
-    }
+    datasets = dict()
+    
+    for phase in ("train", "val", "test"):
+        datasets[phase] = get_dataset_class(loaders_config).create_datasets(splits, config, phase) #[0] What is this for???
+    
+    return datasets
 
 
 def build_dataloaders(
-    config_data: dict,
-    config_transforms: dict | None = None,
-) -> tuple[DataLoader, DataLoader, DataLoader]:
-    
-    datasets = build_datasets(config_data, config_transforms)
-    batch_size = int(config_data.get("batch_size", 1))
-    num_workers = int(config_data.get("num_workers", 0))
+    config: dict
+):
+
+    datasets = build_datasets(config)
+
+    loaders_config = config["loaders"]
+
+    batch_size = loaders_config.get("batch_size", 16)
+    num_workers = loaders_config.get("num_workers", 1)
 
     return {
+        
         "train": DataLoader(
             datasets["train"],
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
+            # generator=_torch_generator(seed),
+            # worker_init_fn=_seed_worker(seed) if seed is not None else None,
+            # pin_memory=bool(loader_config.get("pin_memory", False)),
+            # drop_last=bool(loader_config.get("drop_last", False)),
         ),
+        
         "val": DataLoader(
             datasets["val"],
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
+            # worker_init_fn=_seed_worker(seed) if seed is not None else None,
+            # pin_memory=bool(loader_config.get("pin_memory", False)),
+            # drop_last=bool(loader_config.get("drop_last", False)),
         ),
+        
         "test": DataLoader(
             datasets["test"],
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
+            # worker_init_fn=_seed_worker(seed) if seed is not None else None,
+            # pin_memory=bool(loader_config.get("pin_memory", False)),
+            # drop_last=bool(loader_config.get("drop_last", False)),
         ),
     }
 
 
-import numpy as np
-import matplotlib.pyplot as plt
+def get_dataset_class(loaders_config: dict):
+    # Standard option when nothing is present in the file
+    dataset = loaders_config.get("dataset", "standard")       
+    
+    if dataset == "lazy":
+        return LazyMycobacteriumTuberculosisDataset
+    
+    elif dataset == "standard":
+        return StandardMycobacteriumTuberculosisDataset
+    
+    raise ValueError(f"Unsupported dataset: {dataset}")
 
 
-def show_input_mask_overlay(image, mask, alpha=0.5, cmap="jet"):
-    """
-    image: (1,1,H,W) or (1,H,W) or (H,W)
-    mask:  (1,1,H,W) or (H,W)
-    """
+# def _torch_generator(seed: int | None):
+#     if seed is None:
+#         return None
+#     generator = torch.Generator()
+#     generator.manual_seed(seed)
+#     return generator
 
-    # --- Convert image ---
-    image = np.array(image)
 
-    if image.ndim == 4:          # (B,C,H,W)
-        image = image[0, 0]
-    elif image.ndim == 3:        # (C,H,W)
-        image = image[0]
+# def _seed_worker(seed: int):
+#     def seed_worker(worker_id: int):
+#         worker_seed = seed + worker_id
+#         random.seed(worker_seed)
+#         np.random.seed(worker_seed)
+#         torch.manual_seed(worker_seed)
 
-    # --- Convert mask ---
-    mask = np.array(mask)
+#     return seed_worker
 
-    if mask.ndim == 4:
-        mask = mask[0, 0]
-    elif mask.ndim == 3:
-        mask = mask[0]
 
-    # --- Normalize image ---
-    if image.max() > 1:
-        image = image.astype(np.float32) / 255.0
 
-    # --- Normalize mask ---
-    mask = mask.astype(np.float32)
-    if mask.max() > 1:
-        mask = mask / mask.max()
+if __name__ == "__main__":
+    
+    from Scripts.NeuralNetworkSegmentation.config import load_config_yaml
+    from Scripts.NeuralNetworkSegmentation.utils import seed_everything
+    
+    seed_everything(47)
+    
+    config = load_config_yaml("/home/Documents/Joao_repository/Scripts/NeuralNetworkSegmentation/config.yml")
 
-    # --- Convert grayscale image to RGB ---
-    image_rgb = np.stack([image] * 3, axis=-1)
+    dataloaders = build_dataloaders(config)
 
-    # --- Color mask ---
-    colored_mask = plt.get_cmap(cmap)(mask)[..., :3]
-
-    # --- Overlay ---
-    overlay = (1 - alpha) * image_rgb + alpha * colored_mask
-    overlay = np.clip(overlay, 0, 1)
-
-    # --- Plot ---
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-
-    axes[0].imshow(image, cmap="gray")
-    axes[0].set_title("Input")
-    axes[0].axis("off")
-
-    axes[1].imshow(mask, cmap=cmap)
-    axes[1].set_title("Mask")
-    axes[1].axis("off")
-
-    axes[2].imshow(overlay)
-    axes[2].set_title("Overlay")
-    axes[2].axis("off")
-
-    plt.tight_layout()
-    plt.show()
+    val_loader = dataloaders["test"]
+    print(val_loader)
+    for batch in val_loader:
+        inp, lab = batch
+        print(inp.shape, "main inp shape")
+        print(lab.shape, "main lab shape")
