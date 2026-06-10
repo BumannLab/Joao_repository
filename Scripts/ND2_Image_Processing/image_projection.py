@@ -13,7 +13,7 @@ from ND2_Image_Processing.nd2_metadata_retrieval import *
 # TODO: Load metadata for one image and recycle it for all of the rest
 
 
-IMAGE_DIR = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month"
+IMAGE_DIR = "/Data_HDD/joao/mtb_data/30.04.2026_B2019.9082/SYBRGold_CD68_LAM_DAPI"
 NUM_PROCESSORS = 15
 
 

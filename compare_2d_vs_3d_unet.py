@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 from Scripts.utils import read_image
 
 
-IMAGE_FILE_2D = ""
-IMAGE_FILE_3D = ""
+IMAGE_FILE_2D = "/data/joao/Materials/Joao_repository/mTB_segmentation/3Dvs2D/2D/5th_model/model_test_performance.tif"
+IMAGE_FILE_3D = "/data/joao/Materials/Joao_repository/mTB_segmentation/3Dvs2D/3D/5th_model/model_test_performance.tif"
 
 
 def get_objects(mask):
@@ -80,7 +80,7 @@ def match_objects(gt_objects, pred_objects, dice_threshold=0.3):
     return matches, matched_gt, matched_pred
 
 
-def visualize(gt, pred, idx=None):
+def visualize_plot(gt, pred, idx=None):
     plt.figure(figsize=(8, 4))
 
     plt.subplot(1, 2, 1)
@@ -112,7 +112,7 @@ def evaluate_dataset(gt_list, pred_list, dice_threshold=0.3, visualize=False):
         pred_has_objects = np.any(pred > 0)
 
         if visualize:
-            visualize(gt, pred, i)
+            visualize_plot(gt, pred, i)
 
         # NEGATIVE IMAGES
         if not gt_has_objects:
@@ -171,6 +171,8 @@ def evaluate_dataset(gt_list, pred_list, dice_threshold=0.3, visualize=False):
 
 def main(image_file_2d, image_file_3d):
     
+    visualize = False
+
     images_2d = read_image(Path(image_file_2d))
     gt_images = images_2d[:, 1]
     pred_2d = images_2d[:, -1]
@@ -178,6 +180,12 @@ def main(image_file_2d, image_file_3d):
     images_3d = read_image(Path(image_file_3d))
     pred_3d_proj = np.max(images_3d, axis = 1)[:, -1]
 
-    print("-2D-\n", evaluate_dataset(gt_images, pred_2d, dice_threshold=0.2))
-    print("-3D-\n", evaluate_dataset(gt_images, pred_3d_proj, dice_threshold=0.2))
+    results_2d = evaluate_dataset(gt_images, pred_2d, dice_threshold=0.2, visualize=visualize)
+    results_3d = evaluate_dataset(gt_images, pred_3d_proj, dice_threshold=0.2, visualize=visualize)
 
+    print("-2D-\n", results_2d)
+    print("-3D-\n", results_3d)
+
+
+if __name__ == "__main__":
+    main(IMAGE_FILE_2D, IMAGE_FILE_3D)

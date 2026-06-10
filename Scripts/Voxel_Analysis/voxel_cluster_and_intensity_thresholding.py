@@ -15,8 +15,8 @@ from compute_direction_and_cut_overlap import (
     cut_overlap,
 )
 
-IMAGE_DIR = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month"
-ODIRNAME = "/data/joao/Materials/Joao_repository/Results/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month/SYBRGold_GET800/"
+IMAGE_DIR = "/Data_HDD/joao/mtb_data/30.04.2026_B2019.9082/SYBRGold_CD68_LAM_DAPI"
+ODIRNAME = "/data/joao/Materials/Joao_repository/Results/30.04.2026_B2019.9082/SYBRGold_CD68_LAM_DAPI/SYBRGold_GET800/"
 
 CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
 CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=800"

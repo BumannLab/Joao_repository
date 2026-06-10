@@ -101,6 +101,34 @@ class GaussianBlur:
         return _match_return_type(x, y)
     
 
+class RandomHorizontalFlip:
+    def __init__(self, flip_probability=0.5):
+        self.flip_probability = flip_probability
+
+    def __call__(self, x, y=None):
+
+        if random.random() < self.flip_probability:
+            x = torch.flip(x, dims=(-1,))
+            if y is not None:
+                y = torch.flip(y, dims=(-1,))
+
+        return _match_return_type(x, y)
+    
+
+class RandomVerticalFlip:
+    def __init__(self, flip_probability=0.5):
+        self.flip_probability = flip_probability
+
+    def __call__(self, x, y=None):
+
+        if random.random() < self.flip_probability:
+            x = torch.flip(x, dims=(-2,))
+            if y is not None:
+                y = torch.flip(y, dims=(-2,))
+
+        return _match_return_type(x, y)
+    
+
 class Resize:
     def __init__(self, size, interpolation = (v2.InterpolationMode.BILINEAR, v2.InterpolationMode.NEAREST)):
         self.size = size

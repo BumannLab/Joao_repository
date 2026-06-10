@@ -11,20 +11,20 @@ from monai.inferers import SlidingWindowInferer
 from utils import get_images_path, read_image, AXES
 from NeuralNetworkSegmentation.models.unet import UNet
 
-IMAGE_DIR = "/data/joao/mTBData/20251127/full111/1"
+IMAGE_DIR = "/data/joao/ppt/2d"
 CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
 CHANNELS_TO_USE = [0]
 CLUSTER_SIZE_THRESHOLD = 5
 
-WINDOW_SIZE = (21, 144, 144)
-WINDOW_STRIDE = (21, 72, 72)
+WINDOW_SIZE = (1, 256, 256)
+WINDOW_STRIDE = (1, 256, 256)
 
-TORCH_MODEL_PATH = "/data/joao/Materials/Joao_repository/mTB_segmentation/center_crop_no_translation/model.pt"
+TORCH_MODEL_PATH = "/data/joao/Materials/Joao_repository/mTB_segmentation/3Dvs2D/2D/1st_model/model.pt"
 NUM_BLOCKS = 3
 
 SAVE_MASKS = True
 
-ODIRNAME = "NeuralNetworkSegmentation/inference/test_inference"
+ODIRNAME = "/data/joao/ppt/2d/for_powerpoint"
 
 DEVICE = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
@@ -289,7 +289,7 @@ def apply_model_2(image, model, sliding_window, device):
     with torch.no_grad():
     
         image_tensor = process_image(image, device)
-        pred = sliding_window(inputs=image_tensor, predictor=model)
+        pred = sliding_window(inputs=image_tensor, network=model)
         
         pred = torch.argmax(pred, dim=1)
         pred = torch.permute(pred, (1, 0, 2, 3)) # Convert from CxDxHxW into DxCxHxW
@@ -362,7 +362,7 @@ def main(
     odirname = Path(odirname)
     odirname.mkdir(parents=True, exist_ok=True)
 
-    images_path = get_images_path(image_dir)[210:]
+    images_path = get_images_path(image_dir)
 
     model = UNet(in_channels=len(channels_to_use), out_channels=2, channels=32, num_blocks=num_blocks, use_batchnorm=True, is_3d=True)
     model.to(device)

@@ -5,6 +5,8 @@ from monai.metrics import (
 )
 import torch.nn.functional as F
 
+from NeuralNetworkSegmentation._utils import convert_tensor_to_numpy
+
 
 def get_metrics(metrics_config: dict):
 
@@ -26,12 +28,14 @@ def get_metrics(metrics_config: dict):
     return metrics
 
 
-def confusion_matrix(y_pred, y):
+def confusion_matrix(output, target):
 
-    y_pred = F.one_hot(y_pred.argmax(dim=1), num_classes=y_pred.shape[1]).permute(0, 3, 1, 2).contiguous()
+    n_channels = output.shape[1]
+
+    output_flat = F.one_hot(output.argmax(dim=1), num_classes=output.shape[1]).permute(0, 3, 1, 2).contiguous()
     
-    y = F.one_hot(y.squeeze(dim=1), num_classes=y.shape[1]).permute(0, 3, 1, 2).contiguous()
+    target_flat = F.one_hot(y.squeeze(dim=1), num_classes=y.shape[1]).permute(0, 3, 1, 2).contiguous()
 
-    _confusion_matrix = get_confusion_matrix(y_pred, y)
+    conf_mat = get_confusion_matrix(output, y)
 
     return _confusion_matrix

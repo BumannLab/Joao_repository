@@ -11,7 +11,7 @@ from torch import nn
 
 class ConvolutionBlock(nn.Module):
     # TODO: Add batch normalization?
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d):
+    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d, dropout_rate=0.0):
         super().__init__()
 
         bias = True if not use_batchnorm else False
@@ -34,8 +34,8 @@ class ConvolutionBlock(nn.Module):
 
 
 class Encoder(ConvolutionBlock):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d):
-        super().__init__(in_channels, out_channels, use_batchnorm, in_3d) 
+    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d, dropout_rate=0.0):
+        super().__init__(in_channels, out_channels, use_batchnorm, in_3d, dropout_rate) 
 
         max_pool = nn.MaxPool3d if in_3d else nn.MaxPool2d
         
@@ -49,8 +49,8 @@ class Encoder(ConvolutionBlock):
 
 
 class Decoder(ConvolutionBlock):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d):
-        super().__init__(in_channels, out_channels, use_batchnorm, in_3d)
+    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d, dropout_rate=0.0):
+        super().__init__(in_channels, out_channels, use_batchnorm, in_3d, dropout_rate)
 
         bias = True if not use_batchnorm else False
 

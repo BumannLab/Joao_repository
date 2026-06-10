@@ -138,6 +138,9 @@ def read_nd2_image(path, inc_metadata=False):
 
 def read_image(path, inc_metadata = False):
 
+    if not isinstance(path, Path):
+        path = Path(path)
+
     if path.suffix == ".nd2":
         try: 
             tpl = read_nd2_image(path, inc_metadata)
