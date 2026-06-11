@@ -35,28 +35,41 @@ loaders:
 
   dataset: standard
 
-  raw_path: /home/MockDataset/inputs # Path to the input images used for training.
-  channels_to_load: [0,1] # Channel indices to load from each image.
+  raw_path: Data/RAW_DATASET/B.e202.21394/FINAL_DATASET/inputs # Path to the input images used for training.
+  channels_to_load: [0] # Channel indices to load from each image.
   
-  label_path: "/home/MockDataset/masks" # Path to the segmentation masks matching the input images.
+  label_path: Data/RAW_DATASET/B.e202.21394/FINAL_DATASET/masks # Path to the segmentation masks matching the input images.
   
-  split_train: 0.6 # Fraction of the dataset assigned to the training split.
-  split_val: 0.2 # Fraction of the dataset assigned to the validation split.
-  split_test: 0.2 # Fraction of the dataset assigned to the test split.
+  split_train: 0.2 # Fraction of the dataset assigned to the training split.
+  split_val: 0.4 # Fraction of the dataset assigned to the validation split.
+  split_test: 0.4 # Fraction of the dataset assigned to the test split.
   
-  batch_size: 2
+  batch_size: 1
   num_workers: 1
 
   generate_data: False # Whether to create a generated dataset before training.
   num_images: 15 # Number of images/events to generate when data generation is enabled.
 
-  train: 
+  train:
     transforms:
       - name: CenterCrop
+        height: 128
+        width: 128
+      - name: Rotate
+        angle_range: [-180, 180] 
+        p: 1.0
 
-  val: null
+  val:
+    transforms:
+      - name: CenterCrop
+        height: 128
+        width: 128
 
-  test: null
+  test:
+    transforms:
+      - name: CenterCrop
+        height: 128
+        width: 128
 
 trainer:
   num_epochs: 50
