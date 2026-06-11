@@ -7,6 +7,8 @@ import numpy as np
 
 from Scripts.NeuralNetworkSegmentation.utils import get_class
 
+import albumentations as A
+
 ORDER_TO_INTERPOLATION = {
     0: InterpolationMode.NEAREST,
     1: InterpolationMode.BILINEAR,
@@ -163,87 +165,61 @@ class DepthPadding:
 
         return img
     
-
-class PairedTransformPipeline:
-    def __init__(self, steps):
-        self.steps = steps
-
-    def _apply_transform(self, transform, img):
-            return transform(img)
-
-    def __call__(self, x: torch.Tensor, y: torch.Tensor):
-        
-        for transform, apply_to_input, apply_to_mask in self.steps:
-            
-            if apply_to_input:
-                x = self._apply_transform(transform, x)
-            if apply_to_mask:
-                y = self._apply_transform(transform, y)
-
-        return x, y
-
-
-def build_transform_pipeline(config_transforms):
-
-    # TODO: handle cases where raw or label has nothing on the config file"
-    raw_transforms = config_transforms["raw"]
-    label_transforms = config_transforms["label"]
-
-    steps = list()
-
-    for transform in raw_transforms:
-        
-        apply_input, apply_mask = False, False
-        
-        if transform in raw_transforms:
-            apply_input = True
-        if transform in label_transforms:
-            apply_mask = True
-
-        _transform = get_class(transform, ["Scripts.NeuralNetworkSegmentation.transforms"])
-        _params = dict(raw_transforms.get(transform, {})) # TODO: ASSERT PARAMS ARE EQUAL FOR BOTH RAW AND LABEL
-
-        steps.append((_transform(**_params), apply_input, apply_mask))
-
-    return PairedTransformPipeline(steps)
-
-
-class Compose:
-    
-    def __init__(self, transforms):
-        self.transforms = transforms
-
-    def __call__(self, img: torch.Tensor):
-        
-        for transform in self.transforms:
-            
-            img = transform(img)
-
-        return img
     
 class AugmentationTransformer:
-    def __init__(self, split_config, seed):
+    def __init__(self, phase_transform_config, seed):
     
         """Factory class for creating data augmentation pipelines."""
 
-        self.split_config = split_config
+        self.phase_transform_config = phase_transform_config
         self.seed = seed
 
-    def raw_transform(self):
-        return self._create_transform("raw")
+    def _create_transform(self):
 
-    def label_transform(self):
-        return self._create_transform("label")
-
-    def _create_transform(self, name):
-        assert name in self.phase_config, f"Could not find {name} transform"
-
-        return Compose([self._create_augmentation(augmentation_name) for augmentation_name in self.phase_config[name]])
+        return A.Compose([self._create_augmentation(augmentation) for augmentation in self.phase_transform_config], seed = self.seed)
     
     def _create_augmentation(self, augmentation):
 
-        _transform = get_class(augmentation, ["Scripts.NeuralNetworkSegmentation.transforms"])
-        self.phase_config["random_state"] = np.random.RandomState(self.seed)
-        _params =  self.phase_config.get(augmentation, {})
+        assert "name" in augmentation, f"No name found in {augmentation}"
+
+        augmentation_name = augmentation.pop("name")
+
+        _transform = getattr(A, augmentation_name)
+        _params =  augmentation
+    
         return _transform(**_params)
+    
+
+if __name__ == "__main__":
+    config = [{'name': 'CenterCrop', 'height': 128, 'width': 128}, {'name': 'Rotate', 'angle_range': (-180, 180), 'p': 1.0}]
+
+    transformer_pipeline = AugmentationTransformer(config, seed = 47)._create_transform()
+
+    import numpy as np
+
+    raw = np.random.randint(1, 65536, (8, 4, 256, 256)).astype(np.uint16)
+    mask = np.random.randint(1, 256, (8, 1, 256, 256)).astype(np.uint8)
+
+    raw_transposed = np.transpose(raw, (0, 2, 3, 1))
+    mask_transposed = np.transpose(mask, (0, 2, 3, 1))
+
+    augmented = transformer_pipeline(volume = raw_transposed, mask3d = mask_transposed)
+    
+    transforms = A.Compose(
+        [
+            # A.Rotate(angle_range=(-45, 45), p=1.0),
+            A.SaltAndPepper((0.1, 0.2)),
+        ]
+    )
+    
+    print(augmented.keys())
+    
+    augmented_raw = augmented["volume"]
+    augmented_mask = augmented["mask3d"]
+    print(augmented_raw)
+    print(augmented_raw.shape)
+    print(augmented_raw.dtype)
+
+    print(augmented_mask.shape)
+    print(augmented_mask.dtype)
 
