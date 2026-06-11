@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from Scripts.utils import get_images_path, read_image
-from Scripts.NeuralNetworkSegmentation.transforms import build_transform_pipeline
+from Scripts.NeuralNetworkSegmentation.transforms import AugmentationTransformer
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
 
         self.samples = samples
         self.phase = phase
-        self.channels_to_load = channels_to_load,
+        self.channels_to_load = channels_to_load
         self.transform = transform
         self.generate_data = generate_data
         self.num_images = max(int(num_images), 1)
@@ -66,37 +66,62 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
             idx = idx // self.num_images
 
         # sample = self.samples[idx]
-        print(self.samples[idx].file_name)
         input_image, mask_image = self.load_sample_arrays(idx)
-        input_tensor = torch.from_numpy(input_image / 65535).to(torch.float32)
-        mask_tensor = torch.from_numpy(mask_image / 255).to(torch.long)
+        
+        # NEW
+        input_image = input_image / 65535
+        mask_image = mask_image / 255
+        
+        input_image = input_image.astype(np.float32)
+        mask_image = mask_image.astype(np.long)
+
+        # OLD
+        # input_tensor = torch.from_numpy(input_image / 65535).to(torch.float32)
+        # mask_tensor = torch.from_numpy(mask_image / 255).to(torch.long)
+
+        print(input_image.shape)
+        print(mask_image.shape)
 
         if self.transform is not None:
-            input_tensor, mask_tensor = self.transform(input_tensor, mask_tensor)
+            # NEW convert into albumentations desired shape D,H,W,C (shape before hand was D,C,H,W)
+            input_tensor = np.transpose(input_image, (0, 2, 3, 1))
+            mask_tensor = np.transpose(mask_image, (0, 2, 3, 1))
+
+
+            transformed = self.transform(volume = input_tensor, mask3d = mask_tensor)
+            input_tensor = transformed["volume"]
+            mask_tensor = transformed["mask3d"]
 
         if input_tensor.ndim == 4 and mask_tensor.ndim == 4:
-            input_tensor = input_tensor.permute(1, 0, 2, 3)
-            mask_tensor = mask_tensor.permute(1, 0, 2, 3)
+            # NEW conversion from D,H,W,C into C,D,H,W
+            input_tensor = input_tensor.permute(3, 0, 1, 2)
+            mask_tensor = mask_tensor.permute(3, 0, 1, 2)
 
+
+            # OLD conversion from D,C,H,W to C,D,H,W
+            # input_tensor = input_tensor.permute(1, 0, 2, 3)
+            # mask_tensor = mask_tensor.permute(1, 0, 2, 3)
+
+        print(self.samples[idx].file_name)
         return input_tensor, mask_tensor
 
     def load_sample_arrays(self, idx):
         raise NotImplementedError
 
     @classmethod # Initiates an instance of the class
-    def create_datasets(cls, splits, config: dict, phase: str):
-        
+    def create_dataset(cls, splits, config: dict, phase: str):
+
         loaders_config = config["loaders"]
         
         assert phase in loaders_config, f"{phase} not found in config"
         
         channels_to_load = loaders_config.get("channels_to_load", [])
 
-        phase_config = loaders_config
+        phase_config = loaders_config[phase]
         phase_transforms_config = phase_config.get("transforms", {})
         seed = config["seed"]
 
-        phase_transform = build_transform_pipeline(phase_transforms_config, seed)
+        transform_pipeline = AugmentationTransformer(phase_transforms_config, seed)._create_transform()
         
         generate_data = bool(loaders_config.get("generate_data", False))
         num_images = int(loaders_config.get("num_images", 1))
@@ -105,7 +130,7 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
                 splits[phase],
                 phase=phase,
                 channels_to_load = channels_to_load,
-                transform=phase_transform,
+                transform=transform_pipeline,
                 generate_data=generate_data if phase == "train" else False,
                 num_images=num_images,
             )
@@ -129,8 +154,7 @@ class StandardMycobacteriumTuberculosisDataset(BaseMycobacteriumTuberculosisData
             generate_data=generate_data,
             num_images=num_images,
         )
-
-
+        
         self.loaded_samples = [
             (read_input(sample.input_path, self.channels_to_load), read_mask(sample.mask_path))
             for sample in self.samples
@@ -159,6 +183,8 @@ class LazyMycobacteriumTuberculosisDataset(BaseMycobacteriumTuberculosisDataset)
             generate_data=generate_data,
             num_images=num_images,
         )
+
+
     
     def load_sample_arrays(self, idx):
         sample = self.samples[idx]
@@ -166,6 +192,7 @@ class LazyMycobacteriumTuberculosisDataset(BaseMycobacteriumTuberculosisDataset)
 
 
 def read_input(input_path: Path, channels_to_load: list | None = None):
+    
     input_image = read_image(input_path)
 
     if channels_to_load:
@@ -292,7 +319,7 @@ def build_datasets(config):
     )
 
     train_frac = loaders_config.get("split_train", 0.6) 
-    val_frac = loaders_config.get("split_validation", 0.2)
+    val_frac = loaders_config.get("split_val", 0.2)
 
     # TODO: Handle if test fraction is None or not present 
     # This will have wide different things, first the split will not happen for the test
@@ -316,7 +343,7 @@ def build_datasets(config):
     datasets = dict()
     
     for phase in ("train", "val", "test"):
-        datasets[phase] = get_dataset_class(loaders_config).create_datasets(splits, config, phase) #[0] What is this for???
+        datasets[phase] = get_dataset_class(loaders_config).create_dataset(splits, config, phase) #[0] What is this for???
     
     return datasets
 
@@ -398,6 +425,52 @@ def get_dataset_class(loaders_config: dict):
 #     return seed_worker
 
 
+def show_split_pairs(batch): 
+
+    import matplotlib.pyplot as plt
+
+    raw, label = batch
+
+    print(raw.shape)
+    print(label.shape)
+
+    for i in range(raw.shape[0]):
+
+        _raw = raw[i]
+        _label = label[i]
+
+        print(_raw.shape, "in loop")
+        print(_label.shape, "in loop")
+
+        sybrgold = torch.amax(_raw, dim=1)[0]  # FIRST CHANNEL ONLY
+        mask = torch.amax(_label, dim=1)[0]  # FIRST CHANNEL ONLY
+
+        print(sybrgold.shape)
+        print(mask.shape)
+
+        sybrgold = sybrgold.detach().cpu().numpy()
+        mask = mask.detach().cpu().numpy()
+
+        fig, ax = plt.subplots(1, 3, figsize=(9, 3))
+
+        ax[0].imshow(sybrgold, cmap="gray")
+        ax[0].set_title(f"original sybrgold")
+        ax[0].axis("off")
+
+        ax[1].imshow(mask, cmap="gray")
+        ax[1].set_title("mask")
+        ax[1].axis("off")
+
+        # overlay
+        ax[2].imshow(sybrgold, cmap="gray")
+        ax[2].imshow(mask, alpha=0.4)
+        ax[2].set_title("overlay")
+        ax[2].axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
 
 if __name__ == "__main__":
     
@@ -406,13 +479,18 @@ if __name__ == "__main__":
     
     seed_everything(47)
     
-    config = load_config_yaml("/home/Documents/Joao_repository/Scripts/NeuralNetworkSegmentation/config.yml")
+    config = load_config_yaml("/data/joao/Materials/Joao_repository/Scripts/NeuralNetworkSegmentation/config.yml")
+
+    print(config)
 
     dataloaders = build_dataloaders(config)
 
-    val_loader = dataloaders["test"]
+    val_loader = dataloaders["train"]
     print(val_loader)
+    
     for batch in val_loader:
+        show_split_pairs(batch)
         inp, lab = batch
         print(inp.shape, "main inp shape")
         print(lab.shape, "main lab shape")
+
