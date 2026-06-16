@@ -4,166 +4,48 @@ import torch
 from torchvision.transforms import InterpolationMode
 import torchvision.transforms.functional as F
 import numpy as np
+from scipy.ndimage import uniform_filter, median_filter
 
 from Scripts.NeuralNetworkSegmentation.utils import get_class
 
 import albumentations as A
 
-ORDER_TO_INTERPOLATION = {
-    0: InterpolationMode.NEAREST,
-    1: InterpolationMode.BILINEAR,
-}
 
+class SliceReplication3DFilter(A.Transform3D):
+    """Increase depth resolution by repeating slices, then applying a 3D filter."""
 
-def _as_pair(value):
-    if isinstance(value, (list, tuple)):
-        return tuple(value)
-    return (value, value)
+    def __init__(self, num_slice_replications=1, filter_type="mean", kernel_size=3, p=0.5):
+        super().__init__(p=p)
 
+        self.num_slice_replications = num_slice_replications
+        self.filter_type = filter_type
+        self.kernel_size = kernel_size
 
-def get_interpolation_from_order(order):
-    return ORDER_TO_INTERPOLATION.get(order, InterpolationMode.BILINEAR)
+    def get_params_dependent_on_data(self, params, data):
 
+        repeats = self.num_slice_replications + 1
+        size = (self.kernel_size, self.kernel_size, self.kernel_size, 1)
 
-class AdjustBrightness:
-    def __init__(self, brightness = (0.8, 1.2), same_channels_brightness = False, **kwargs):
-        self.brightness = _as_pair(brightness)
-        self.same_channels_brightness = same_channels_brightness
-
-    def __call__(self, img):
-
-        brightness_factors = torch.empty(
-            img.size(-3), device=img.device
-        )
-        
-        if self.same_channels_brightness:
-            value = random.uniform(self.brightness[0], self.brightness[1])
-            brightness_factors.fill_(value)
+        if self.filter_type == "mean":
+            filter_func = uniform_filter
+        elif self.filter_type == "median":
+            filter_func = median_filter
         else:
-            # change this to random call not torch
-            brightness_factors.uniform_(
-                self.brightness[0], self.brightness[1])
-        
-        shape = [1] * img.ndim
-        shape[-3] = -1
+            raise ValueError(f"Unknown filter_type: {self.filter_type}")
 
-        img = img * brightness_factors.view(*shape)
+        return {"repeats": repeats, "filter_func": filter_func, "size": size}
 
-        img = torch.clamp(img, 0.0, 1.0)
+    def apply_to_volume(self, volume, repeats, filter_func, size, *args, **params):
 
-        return img
-    
+        volume = np.repeat(volume, repeats=repeats, axis=0)
 
-class RandomAffine:
-    def __init__(self, 
-                degrees = 90,
-                translate = 0.2,
-                scale = 2,
-                shear = 2,  
-                order = 1,
-                **kwargs):
+        return filter_func(volume, size=size)
 
-        self.degrees = degrees
-        self.translate = _as_pair(translate)
-        self.scale = _as_pair(scale)
-        self.shear = _as_pair(shear) 
-        self.order = order
+    def apply_to_mask3d(self, mask3d, repeats, filter_func, size, *args, **params):
 
-    def __call__(self, img):
-        angle = random.uniform(-self.degrees, self.degrees)
-        
-        max_dx = self.translate[0] * img.shape[-1]
-        max_dy = self.translate[1] * img.shape[-2]
-        
-        translations = (
-            int(random.uniform(-max_dx, max_dx)),
-            int(random.uniform(-max_dy, max_dy)),
-        )
-       
-        scale_factor = random.uniform(*self.scale)
-        shear_factor = random.uniform(*self.shear)
+        mask3d = np.repeat(mask3d, repeats=repeats, axis=0)
 
-        return F.affine(
-            img,
-            angle,
-            translations,
-            scale_factor,
-            shear_factor,
-            interpolation=get_interpolation_from_order(self.order),
-        )
-    
-
-class GaussianBlur:
-    def __init__(self, kernel = 3, sigma = (1, 4), blur_probability = 0.5, **kwargs): # TODO change default sigma value
-        self.kernel = kernel
-        self.sigma = tuple(sigma)
-        self.blur_probability = blur_probability
-
-    def __call__(self, img):
-        
-        if random.random() < self.blur_probability:
-            img = F.gaussian_blur(img, self.kernel, self.sigma)
-
-        return img
-    
-
-class RandomHorizontalFlip:
-    def __init__(self, flip_probability=0.5, **kwargs):
-        self.flip_probability = flip_probability
-
-    def __call__(self, img):
-        if random.random() < self.flip_probability:
-            img = torch.flip(img, dims=(-1,))
-
-        return img
-    
-
-class RandomVerticalFlip:
-    def __init__(self, flip_probability=0.5, **kwargs):
-        self.flip_probability = flip_probability
-
-    def __call__(self, img):
-        if random.random() < self.flip_probability:
-            img = torch.flip(img, dims=(-2,))
-
-        return img
-    
-
-class Resize:
-    def __init__(self, size = 128, order = 0, **kwargs):
-        self.size = size
-        self.order = order
-
-    def __call__(self, img):
-
-        return F.resize(img, (self.size, self.size), get_interpolation_from_order(self.order))
-    
-
-class CenterCrop:
-    def __init__(self, size = 128, random_state=None, **kwargs):
-        self.size = size
-        self.random_state = random_state
-
-    def __call__(self, img):
-
-        return F.center_crop(img, (self.size, self.size))
-    
-
-class DepthPadding:
-    def __init__(self, padding = 0, **kwargs):
-        self.padding = _as_pair(padding)
-        # TODO: ADD PADDING MODE
-
-    def __call__(self, img):
-
-        pad_up, pad_down = self.padding
-
-        up_pad = img.new_zeros((pad_up, *img.shape[-3:]))
-        down_pad = img.new_zeros((pad_down, *img.shape[-3:]))
-
-        img = torch.concatenate((up_pad, img, down_pad), dim = 0)
-
-        return img
+        return median_filter(mask3d, size=size)
     
     
 class AugmentationTransformer:
@@ -176,22 +58,66 @@ class AugmentationTransformer:
 
     def _create_transform(self):
 
-        return A.Compose([self._create_augmentation(augmentation) for augmentation in self.phase_transform_config], seed = self.seed)
+        return A.Compose(
+            [self._create_augmentation(augmentation) for augmentation in self.phase_transform_config],
+            seed = self.seed,
+        )
     
     def _create_augmentation(self, augmentation):
+
+        augmentation = augmentation.copy()
 
         assert "name" in augmentation, f"No name found in {augmentation}"
 
         augmentation_name = augmentation.pop("name")
 
+        if augmentation_name == "OneOf":
+            assert "transforms" in augmentation, f"No transforms found in {augmentation_name}: {augmentation}"
+
+            return self._create_one_of(
+                augmentation.pop("transforms"),
+                **augmentation,
+            )
+
         _transform = getattr(A, augmentation_name)
         _params =  augmentation
     
         return _transform(**_params)
+
+    def _create_one_of(self, one_of_config, **params):
+
+        one_of_transforms = [
+            self._create_augmentation(one_of_augmentation)
+            for one_of_augmentation in one_of_config
+        ]
+
+        return A.OneOf(one_of_transforms, **params)
     
 
 if __name__ == "__main__":
-    config = [{'name': 'CenterCrop', 'height': 128, 'width': 128}, {'name': 'Rotate', 'angle_range': (-180, 180), 'p': 1.0}]
+    config = [
+        {
+            "name": "CenterCrop",
+            "height": 128,
+            "width": 128,
+        },
+        {
+            "name": "OneOf",
+            "transforms": [
+                {
+                    "name": "CenterCrop",
+                    "height": 128,
+                    "width": 128,
+                },
+                {
+                    "name": "Rotate",
+                    "angle_range": [-180, 180],
+                    "p": 1.0,
+                },
+            ],
+            "p": 1.0,
+        },
+    ]
 
     transformer_pipeline = AugmentationTransformer(config, seed = 47)._create_transform()
 
@@ -204,22 +130,3 @@ if __name__ == "__main__":
     mask_transposed = np.transpose(mask, (0, 2, 3, 1))
 
     augmented = transformer_pipeline(volume = raw_transposed, mask3d = mask_transposed)
-    
-    transforms = A.Compose(
-        [
-            # A.Rotate(angle_range=(-45, 45), p=1.0),
-            A.SaltAndPepper((0.1, 0.2)),
-        ]
-    )
-    
-    print(augmented.keys())
-    
-    augmented_raw = augmented["volume"]
-    augmented_mask = augmented["mask3d"]
-    print(augmented_raw)
-    print(augmented_raw.shape)
-    print(augmented_raw.dtype)
-
-    print(augmented_mask.shape)
-    print(augmented_mask.dtype)
-
