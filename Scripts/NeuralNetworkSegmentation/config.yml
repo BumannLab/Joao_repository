@@ -52,9 +52,21 @@ loaders:
 
   train:
     transforms:
+
       - name: CenterCrop
         height: 128
         width: 128
+
+      - name: OneOf
+        transforms:
+          - name: CenterCrop
+            height: 128
+            width: 128
+          - name: Rotate
+            angle_range: [-180, 180]
+            p: 1.0
+        p: 1.0
+
       - name: Rotate
         angle_range: [-180, 180] 
         p: 1.0
