@@ -84,25 +84,23 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
 
         if self.transform is not None:
             # NEW convert into albumentations desired shape D,H,W,C (shape before hand was D,C,H,W)
-            input_tensor = np.transpose(input_image, (0, 2, 3, 1))
-            mask_tensor = np.transpose(mask_image, (0, 2, 3, 1))
+            input_image = np.transpose(input_image, (0, 2, 3, 1))
+            mask_image = np.transpose(mask_image, (0, 2, 3, 1))
 
-
-            transformed = self.transform(volume = input_tensor, mask3d = mask_tensor)
+            transformed = self.transform(volume = input_image, mask3d = mask_image)
             input_tensor = transformed["volume"]
             mask_tensor = transformed["mask3d"]
 
         if input_tensor.ndim == 4 and mask_tensor.ndim == 4:
+            # TODO: Augmentation to convert to tensor if not convert it here add function for it
             # NEW conversion from D,H,W,C into C,D,H,W
             input_tensor = input_tensor.permute(3, 0, 1, 2)
             mask_tensor = mask_tensor.permute(3, 0, 1, 2)
-
 
             # OLD conversion from D,C,H,W to C,D,H,W
             # input_tensor = input_tensor.permute(1, 0, 2, 3)
             # mask_tensor = mask_tensor.permute(1, 0, 2, 3)
 
-        print(self.samples[idx].file_name)
         return input_tensor, mask_tensor
 
     def load_sample_arrays(self, idx):
@@ -118,7 +116,7 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
         channels_to_load = loaders_config.get("channels_to_load", [])
 
         phase_config = loaders_config[phase]
-        phase_transforms_config = phase_config.get("transforms", {})
+        phase_transforms_config = phase_config.get("transforms", [])
         seed = config["seed"]
 
         transform_pipeline = AugmentationTransformer(phase_transforms_config, seed)._create_transform()
