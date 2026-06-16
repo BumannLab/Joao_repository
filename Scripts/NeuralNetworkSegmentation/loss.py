@@ -49,7 +49,7 @@ def get_loss(loss_config, weights = None):
         incude_bg = loss_config.get("include_background", True)
         gamma = loss_config.get("gamma", 1)
         lambda_dice = loss_config.get("lambda_dice", 0.5)
-        lambda_focal = loss_config.get("lambda_dice", 0.5)
+        lambda_focal = loss_config.get("lambda_focal", 0.5)
 
 
         return DiceFocalLoss(
