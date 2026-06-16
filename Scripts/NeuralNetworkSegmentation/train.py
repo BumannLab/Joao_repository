@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 from Scripts.NeuralNetworkSegmentation.models.unet import is_model_2d
@@ -95,9 +94,6 @@ class ModelTrainer:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-
-            if self.lr_scheduler is not None:
-                self.lr_scheduler.step()
             
             epoch_loss += loss.item()
             epoch_eval_score += eval_score
@@ -130,8 +126,8 @@ class ModelTrainer:
                 epoch_loss += loss.item()
                 epoch_eval_score += eval_score
 
-            epoch_loss = epoch_loss / len(self.loaders["train"])
-            epoch_eval_score = epoch_eval_score / len(self.loaders["train"])
+            epoch_loss = epoch_loss / len(self.loaders["val"])
+            epoch_eval_score = epoch_eval_score / len(self.loaders["val"])
 
             print(f"Validation stats. Loss: {epoch_loss:>9f}. Evaluation score: {epoch_eval_score:>9f}")
 
@@ -148,7 +144,7 @@ class ModelTrainer:
         self.model.eval()
         
         with torch.no_grad():
-            for batch_idx, batch in enumerate(self.loaders["val"]):
+            for batch_idx, batch in enumerate(self.loaders["test"]):
 
                 input, target = batch
                 input, target = input.to(self.device), target.to(self.device)
@@ -163,8 +159,8 @@ class ModelTrainer:
                 epoch_loss += loss.item()
                 epoch_eval_score += eval_score
 
-            epoch_loss = epoch_loss / len(self.loaders["train"])
-            epoch_eval_score = epoch_eval_score / len(self.loaders["train"])
+            epoch_loss = epoch_loss / len(self.loaders["test"])
+            epoch_eval_score = epoch_eval_score / len(self.loaders["test"])
 
             print(f"Test stats. Loss: {epoch_loss:>9f}. Evaluation score: {epoch_eval_score:>9f}")
 
@@ -194,10 +190,13 @@ class ModelTrainer:
             validation_losses.append(val_loss)
             validation_eval_scores.append(val_eval)
 
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.step()
+
         test_loss, test_eval_score, confusion_matrix = self.test()
 
         print(confusion_matrix)
-
+        
 
     def _forward_pass_(self, input, target): # TODO: Transpose output into correct format??
         """
