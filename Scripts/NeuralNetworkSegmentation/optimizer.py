@@ -34,7 +34,7 @@ def get_lr_scheduler(scheduler_config, optimizer): # Handle none
     scheduler_name = scheduler_config.get("name", {})
 
     if scheduler_name == "StepLR":
-        step_size = scheduler_config.get("step_size", 10)
+        step_size = scheduler_config.get("step_size", 100)
         gamma = scheduler_config.get("gamma", 0.1)
         return optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     
