@@ -3,7 +3,7 @@ import torch
 from Scripts.NeuralNetworkSegmentation.optimizer import get_optimizer, get_lr_scheduler
 from Scripts.NeuralNetworkSegmentation.models.unet import get_model
 from Scripts.NeuralNetworkSegmentation.loss import get_loss
-from Scripts.NeuralNetworkSegmentation.config import load_config_yaml
+from Scripts.NeuralNetworkSegmentation.config import load_config_yaml, save_config_yaml
 from Scripts.NeuralNetworkSegmentation.data import build_dataloaders
 from Scripts.NeuralNetworkSegmentation.train import ModelTrainer
 from Scripts.NeuralNetworkSegmentation.metrics import get_eval_criterion
@@ -11,7 +11,6 @@ from Scripts.NeuralNetworkSegmentation.utils import build_seed_from_time, get_sa
 
 
 CONFIG_PATH = "/home/Documents/Joao_repository/Scripts/NeuralNetworkSegmentation/config.yml"
-
 
 def main(
         config_path,
@@ -28,6 +27,8 @@ def main(
     device = config.pop("device", torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu") # If device does search whether gpu exists and use it if not use cpu
     config["device"] = device # write it to config
 
+    save_config_yaml(save_dir, config)
+
     model = get_model(config["model"]).to(device)
 
     optimizer = get_optimizer(config["optimizer"], model)
@@ -36,9 +37,9 @@ def main(
     loss_criterion = get_loss(config["loss_criterion"])
     eval_criterion = get_eval_criterion(config["eval_criterion"])
 
-    loaders = build_dataloaders(config["data"], config["transforms"])
+    loaders = build_dataloaders(config["loaders"], seed)
 
-    num_epochs = config["num_epochs"] 
+    num_epochs = config["trainer"]["num_epochs"] 
 
     trainer = ModelTrainer(
         save_dir = save_dir,
