@@ -5,6 +5,9 @@ from monai.losses import (
     DiceFocalLoss,
 )
 
+# UNet model has a final activation layer that converts logits into probabilities using softmax
+# NOTE: In near future handle missing activation function or just have to be careful when building the config file 
+
 def get_loss(loss_config, weights = None):
     loss_name = loss_config["name"]
 
@@ -13,7 +16,6 @@ def get_loss(loss_config, weights = None):
         incude_bg = loss_config.get("include_background", True)
         return DiceLoss(
             to_onehot_y=True,
-            softmax=True,
             include_background=incude_bg,
             smooth_dr=smooth,
             smooth_nr=smooth,
@@ -26,7 +28,6 @@ def get_loss(loss_config, weights = None):
         lambda_ce = loss_config.get("lambda_ce", 0.5)
         return DiceCELoss(
             to_onehot_y=True,
-            softmax=True,
             include_background=incude_bg,
             smooth_dr=smooth,
             smooth_nr=smooth,
@@ -54,8 +55,8 @@ def get_loss(loss_config, weights = None):
 
         return DiceFocalLoss(
             to_onehot_y=True,
-            softmax=True,
             include_background=incude_bg,
+            gamma=gamma,
             smooth_dr=smooth,
             smooth_nr=smooth,
             lambda_dice=lambda_dice,
