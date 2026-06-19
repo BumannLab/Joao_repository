@@ -10,12 +10,28 @@ from monai.losses import (
 
 def get_loss(loss_config, weights = None):
     loss_name = loss_config["name"]
+    incude_bg = loss_config.get("include_background", True)
+    
+    sigmoid = loss_config.get("sigmoid", False)
+    softmax = loss_config.get("softmax", False)
+
+    if all(function is False for function in [sigmoid, softmax]):
+        raise ValueError("No functions (sigmoid and softmax) were found in the loss section of" \
+        " the config. Please add either one")
+
+    if all(function is True for function in [sigmoid, softmax]):
+        raise ValueError("Both functions (sigmoid and softmax) were found in the loss section of" \
+        " the config. Only one can be selected")
+
 
     if loss_name == "DiceLoss":
         smooth = loss_config.get("smooth", 1)
-        incude_bg = loss_config.get("include_background", True)
         return DiceLoss(
-            to_onehot_y=True,
+            # to_onehot_y: Converts target from Bx1[xD]xHxW into BxN[xD]xHxW where N is 
+            # the number of classes in the singleton target mask
+            to_onehot_y=True if softmax else sigmoid,
+            sigmoid=sigmoid,
+            softmax=softmax, 
             include_background=incude_bg,
             smooth_dr=smooth,
             smooth_nr=smooth,
@@ -23,11 +39,12 @@ def get_loss(loss_config, weights = None):
     
     elif loss_name == "DiceCELoss": # problem with passing weights for now
         smooth = loss_config.get("smooth", 1)
-        incude_bg = loss_config.get("include_background", True)
         lambda_dice = loss_config.get("lambda_dice", 0.5)
         lambda_ce = loss_config.get("lambda_ce", 0.5)
         return DiceCELoss(
             to_onehot_y=True,
+            sigmoid=sigmoid,
+            softmax=softmax,
             include_background=incude_bg,
             smooth_dr=smooth,
             smooth_nr=smooth,
@@ -36,18 +53,17 @@ def get_loss(loss_config, weights = None):
             lambda_ce=lambda_ce,
         )
     
-    elif loss_name == "FocalLoss":
+    elif loss_name == "FocalLoss": # 
         gamma = loss_config.get("gamma", 1)
-        incude_bg = loss_config.get("include_background", True)
         return FocalLoss(
             to_onehot_y=True,
+            use_softmax=softmax if softmax else sigmoid,
             gamma=gamma,
             include_background=incude_bg,
         )
     
     elif loss_name == "DiceFocalLoss":
         smooth = loss_config.get("smooth", 1)
-        incude_bg = loss_config.get("include_background", True)
         gamma = loss_config.get("gamma", 1)
         lambda_dice = loss_config.get("lambda_dice", 0.5)
         lambda_focal = loss_config.get("lambda_focal", 0.5)
@@ -55,6 +71,8 @@ def get_loss(loss_config, weights = None):
 
         return DiceFocalLoss(
             to_onehot_y=True,
+            sigmoid=sigmoid,
+            softmax=softmax,
             include_background=incude_bg,
             gamma=gamma,
             smooth_dr=smooth,
