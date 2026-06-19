@@ -37,9 +37,9 @@ class BlobsAveragePrecision:
             # Convert each target sample to an instance-labeled segmentation once,
             # then score the prediction across several foreground thresholds.
             target_seg = self.target_to_seg(target_mask)
-            
+
             score = self._score_segmentation(self.input_to_seg(prediction, self.threshold), target_seg)
-            
+
             batch_scores.append(score)
 
         return torch.tensor(batch_scores, dtype=input.dtype if input.is_floating_point() else torch.float32).mean()
@@ -139,7 +139,7 @@ class BlobsAveragePrecision:
 def get_eval_criterion(metrics_config: dict):
 
         metric_name = metrics_config["name"]
-    
+
         if metric_name == "Dice":
             include_bg = metrics_config.get("include_background", True)
             return DiceMetric(include_background=include_bg)
@@ -156,7 +156,7 @@ def get_eval_criterion(metrics_config: dict):
 
 def compute_confusion_matrix(output, target, threshold = 0.5): # TODO: ADD THRESHOLD INSTEAD OF ARGMAX AFTER
     n_channels = output.shape[1]
-    
+
     output_flat = F.one_hot(output.argmax(dim=1), num_classes=n_channels).movedim(-1, 1).contiguous()
     target_flat = F.one_hot(target.squeeze(dim=1), num_classes=n_channels).movedim(-1, 1).contiguous()
 
@@ -164,5 +164,5 @@ def compute_confusion_matrix(output, target, threshold = 0.5): # TODO: ADD THRES
     # MONAI returns shape B x C x 4 here: one row per batch item, one row per
     # class/channel, and the 4 values are TP, FP, TN, FN. It is not a single
     # prediction channel; summing over axis 0 below collapses the batch only.
-    
+
     return np.sum(confusion_matrix, axis = 0)
