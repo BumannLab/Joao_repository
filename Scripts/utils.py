@@ -1,4 +1,3 @@
-from glob import glob
 import re
 from pathlib import Path
 from math import ceil, floor
@@ -23,24 +22,26 @@ class RoundingMode(Enum):
 
 
 class Tile: 
-    def __init__(self, tile_path, include_metadata = False, overlap = 0, overlap_directions = [], rounding_mode = "nearest"):
-        """
-        rounding_mode: ceil, floor, nearest
-        """
-        self.tile_path = tile_path
-        self.include_metadata = include_metadata
+    """
+    rounding_mode: ceil, floor, nearest
+    """
+    def __init__(self, tile_path, overlap = 0, overlap_directions = [], rounding_mode = "nearest"):
+        # TODO: Maybe try to get column and row to then compute the directs to remove overlap, 
+        # since this would make it sort of prettier however if decides to return information 
+        # differently it will break and if no directions to remove exist no overlap will be removed
+        # TODO: Test function to see whether this handles 2D and 3D?
+        self.tile_path = Path(tile_path)
         self.overlap_directions = overlap_directions
         self.overlap = overlap # Overlap is from 0 - 100 not from 0 - 1
         self.rounding_mode = RoundingMode(rounding_mode)
 
 
-    def read_tile(self):
+    def read_tile(self, include_metadata = False):
         
         # stores value or tuple (when inc_metadata is true) into single variable and unpacks when needed in main code
-        tpl = read_image(self.tile_path, self.include_metadata)
+        tpl = read_image(self.tile_path, include_metadata)
 
         return tpl
-        
 
     def compute_overlap_pixels(self, height, width):
 
@@ -62,7 +63,8 @@ class Tile:
             pixels_to_remove_h = round(pixels_to_remove_h)
             pixels_to_remove_w = round(pixels_to_remove_w)
 
-        return pixels_to_remove_h, pixels_to_remove_w
+        self.pixels_to_remove_h = pixels_to_remove_h
+        self.pixels_to_remove_w = pixels_to_remove_w
     
 
     def remove_overlap(self, tile): 
@@ -71,18 +73,18 @@ class Tile:
 
         height, width = tile.shape[-2:]
 
-        pixels_to_remove_h, pixels_to_remove_w = self.compute_overlap_pixels(height, width)
+        self.compute_overlap_pixels(height, width)
 
         for direction in self.direction_rm_overlap:
 
             if direction == "top":
-                idx[-2] = slice(pixels_to_remove_h, None)
+                idx[-2] = slice(self.pixels_to_remove_h, None)
             
             elif direction == "left":
-                idx[-1] = slice(pixels_to_remove_w, None)
+                idx[-1] = slice(self.pixels_to_remove_w, None)
             
             elif direction == "right":
-                idx[-1] = slice(-pixels_to_remove_w)
+                idx[-1] = slice(-self.pixels_to_remove_w)
         
         return tile[tuple(idx)]
     
@@ -133,6 +135,7 @@ def read_nd2_image(path, inc_metadata=False):
             )
             image = np.stack(list(frames))
             image = np.transpose(image, (0, 3, 1, 2))
+            
             return (image, None) if inc_metadata else image
 
 
@@ -154,6 +157,7 @@ def read_image(path, inc_metadata = False):
     
     else:
         print(f"File extension is neither a tif neither an nd2.")
+        # TODO: Raise error idk what kind
         return
         
     return tpl
@@ -188,3 +192,11 @@ def create_luts(rgb_values):
     lut[2, :] = (val_range.astype(np.uint16) * rgb_values[2] // 255).astype(np.uint8)
 
     return lut
+
+
+def is_3d(image):
+
+    if any(dim == image.ndim for dim in [2,3]):
+        return False
+    
+    return True
