@@ -16,7 +16,7 @@ class UNet(nn.Module):
                  num_blocks=4,
                  use_batchnorm=False,
                  dropout_rate=0.0,
-                 final_layer_type = "sigmoid",
+                 final_layer = "sigmoid",
                  is_3d=True):
         
         super().__init__()
@@ -31,22 +31,29 @@ class UNet(nn.Module):
 
         current_in_channels = in_channels
         for encoder_out_channels in encoder_channels:
-            self.encoders.append(Encoder(current_in_channels, encoder_out_channels, use_batchnorm, is_3d))
+            self.encoders.append(Encoder(current_in_channels, encoder_out_channels, use_batchnorm, dropout_rate, is_3d))
             current_in_channels = encoder_out_channels
 
         bottleneck_channels = features * (2 ** num_blocks)
-        self.conv = ConvolutionBlock(current_in_channels, bottleneck_channels, use_batchnorm, is_3d)
+        self.conv = ConvolutionBlock(current_in_channels, bottleneck_channels, use_batchnorm, dropout_rate, is_3d)
 
         current_decoder_in_channels = bottleneck_channels
         for decoder_out_channels in reversed(encoder_channels):
-            self.decoders.append(Decoder(current_decoder_in_channels, decoder_out_channels, use_batchnorm, is_3d))
+            self.decoders.append(Decoder(current_decoder_in_channels, decoder_out_channels, use_batchnorm, dropout_rate, is_3d))
             current_decoder_in_channels = decoder_out_channels
 
         conv = nn.Conv3d if is_3d else nn.Conv2d
 
         self.final_conv = conv(features, out_channels, kernel_size=1)
-
-        self.final_layer_type = nn.Softmax(dim = 1) if final_layer_type == "softmax" else nn.Sigmoid()
+        
+        if final_layer == "softmax":
+            self.final_layer = nn.Softmax(dim = 1)
+        
+        elif final_layer == "sigmoid":
+            self.final_layer = nn.Sigmoid()
+        
+        else: 
+            self.final_layer = None
 
         self.is_3d = is_3d
         
@@ -65,19 +72,22 @@ class UNet(nn.Module):
 
         x = self.final_conv(x)
 
-        out = self.final_layer_type(x)
+        if self.final_layer is not None:
 
-        return out, x # probabilities, logits
+            out = self.final_layer(x)
+            return out, x # probabilities, logits
+        
+        return x, x
 
 
 class UNet2D(UNet):
-    def __init__(self, in_channels = 1, out_channels = 2, features = 64, num_blocks = 4, use_batchnorm = False, **kwargs):
-        super().__init__(in_channels, out_channels, features, num_blocks, use_batchnorm, is_3d = False)
+    def __init__(self, in_channels = 1, out_channels = 2, features = 64, num_blocks = 4, use_batchnorm = False, dropout_rate=0.0, final_layer="sigmoid", **kwargs):
+        super().__init__(in_channels, out_channels, features, num_blocks, use_batchnorm, dropout_rate, final_layer, is_3d = False)
 
 
 class UNet3D(UNet):
-    def __init__(self, in_channels = 1, out_channels = 2, features = 64, num_blocks = 4, use_batchnorm = False, **kwargs):
-        super().__init__(in_channels, out_channels, features, num_blocks, use_batchnorm, is_3d = True)
+    def __init__(self, in_channels = 1, out_channels = 2, features = 64, num_blocks = 4, use_batchnorm = False, dropout_rate=0.0, final_layer="sigmoid", **kwargs):
+        super().__init__(in_channels, out_channels, features, num_blocks, use_batchnorm, dropout_rate, final_layer, is_3d = True)
 
 
 def get_model(model_config):

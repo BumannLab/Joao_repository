@@ -8,7 +8,7 @@ from torch import nn
 # allows for the result of the unet be the same size as the input different from the Unet defined in the first article
 
 class ConvolutionBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, dropout_rate, in_3d):
+    def __init__(self, in_channels: int, out_channels: int, use_batchnorm: bool, dropout_rate:float, in_3d: bool):
         super().__init__()
 
         bias = True if not use_batchnorm else False
@@ -35,8 +35,8 @@ class ConvolutionBlock(nn.Module):
 
 
 class Encoder(ConvolutionBlock):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d):
-        super().__init__(in_channels, out_channels, use_batchnorm, in_3d) 
+    def __init__(self, in_channels: int, out_channels: int, use_batchnorm: bool, dropout_rate: float, in_3d: bool):
+        super().__init__(in_channels, out_channels, use_batchnorm, dropout_rate, in_3d) 
 
         max_pool = nn.MaxPool3d if in_3d else nn.MaxPool2d
         
@@ -50,8 +50,8 @@ class Encoder(ConvolutionBlock):
 
 
 class Decoder(ConvolutionBlock):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d):
-        super().__init__(in_channels, out_channels, use_batchnorm, in_3d)
+    def __init__(self, in_channels: int, out_channels: int, use_batchnorm: bool, dropout_rate: float, in_3d: bool):
+        super().__init__(in_channels, out_channels, use_batchnorm, dropout_rate, in_3d)
 
         bias = True if not use_batchnorm else False
 
@@ -67,9 +67,9 @@ class Decoder(ConvolutionBlock):
             dim = 1 if x.ndim == 5 else 0
         else:
             dim = 1 if x.ndim == 4 else 0
-
         
         x = self.t_convolution_operation(x)
+
         x = torch.cat([x, skip], dim=dim)
         x = super().forward(x)
         return x
@@ -77,5 +77,6 @@ class Decoder(ConvolutionBlock):
 
 if __name__ == "__main__":
     print(ConvolutionBlock(1, 2, use_batchnorm=True))
+
     print(Encoder(1, 2, use_batchnorm=False))
     print(Decoder(1, 2, use_batchnorm=False))
