@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-from monai.metrics import DiceMetric, MeanIoU, get_confusion_matrix
+from monai.metrics import LossMetric, DiceMetric, MeanIoU, get_confusion_matrix
 from skimage import measure
 
 from Scripts.NeuralNetworkSegmentation.utils import convert_to_numpy
@@ -77,6 +77,7 @@ class BlobsAveragePrecision:
 
         # Relabel after removing small components so instance ids stay compact.
         return measure.label(seg > 0, background=0, connectivity=2)
+    
 
     def _score_segmentation(self, pred_seg, target_seg):
         pred_labels = [label for label in np.unique(pred_seg) if label != 0]
@@ -149,7 +150,7 @@ def get_eval_criterion(metrics_config: dict):
             return MeanIoU(include_background=include_bg)
 
         if metric_name == "BlobsAveragePrecision":
-            return BlobsAveragePrecision(**metrics_config)
+            return LossMetric(loss_fn=BlobsAveragePrecision(**metrics_config))
 
         raise ValueError(f"Unsupported metric: {metric_name}")
 
