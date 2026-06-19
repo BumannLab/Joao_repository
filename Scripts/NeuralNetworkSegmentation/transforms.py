@@ -79,7 +79,7 @@ class AugmentationTransformer:
                 **augmentation,
             )
 
-        _transform = getattr(A, augmentation_name)
+        _transform = get_class(augmentation_name, modules=["albumentations", "Scripts.NeuralNetworkSegmentation.transforms"])
         _params =  augmentation
     
         return _transform(**_params)
@@ -97,9 +97,7 @@ class AugmentationTransformer:
 if __name__ == "__main__":
     config = [
         {
-            "name": "CenterCrop",
-            "height": 128,
-            "width": 128,
+            "name": "SliceReplication3DFilter"
         },
         {
             "name": "OneOf",
@@ -120,13 +118,6 @@ if __name__ == "__main__":
     ]
 
     transformer_pipeline = AugmentationTransformer(config, seed = 47)._create_transform()
-
-    import numpy as np
-
-    raw = np.random.randint(1, 65536, (8, 4, 256, 256)).astype(np.uint16)
-    mask = np.random.randint(1, 256, (8, 1, 256, 256)).astype(np.uint8)
-
-    raw_transposed = np.transpose(raw, (0, 2, 3, 1))
-    mask_transposed = np.transpose(mask, (0, 2, 3, 1))
-
-    augmented = transformer_pipeline(volume = raw_transposed, mask3d = mask_transposed)
+    
+    print(transformer_pipeline)
+    
