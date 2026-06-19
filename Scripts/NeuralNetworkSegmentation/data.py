@@ -3,16 +3,13 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-import random
-from typing import Any
 
 import numpy as np
-import torch
 from torch.utils.data import DataLoader, Dataset
 
 from Scripts.utils import get_images_path, read_image
 from Scripts.NeuralNetworkSegmentation.transforms import AugmentationTransformer
-
+from Scripts.NeuralNetworkSegmentation.utils import convert_to_tensor
 
 @dataclass(frozen=True)
 class ImageMaskSample:
@@ -65,7 +62,6 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
         if self.generate_data:
             idx = idx // self.num_images
 
-        # sample = self.samples[idx]
         input_image, mask_image = self.load_sample_arrays(idx)
         
         # NEW
@@ -78,28 +74,25 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
         # OLD
         # input_tensor = torch.from_numpy(input_image / 65535).to(torch.float32)
         # mask_tensor = torch.from_numpy(mask_image / 255).to(torch.long)
-
-        print(input_image.shape)
-        print(mask_image.shape)
-
+        
+        # NEW convert into albumentations desired shape D,H,W,C (shape before hand was D,C,H,W)
+        input_image = np.transpose(input_image, (0, 2, 3, 1))
+        mask_image = np.transpose(mask_image, (0, 2, 3, 1))
+        
         if self.transform is not None:
-            # NEW convert into albumentations desired shape D,H,W,C (shape before hand was D,C,H,W)
-            input_image = np.transpose(input_image, (0, 2, 3, 1))
-            mask_image = np.transpose(mask_image, (0, 2, 3, 1))
-
             transformed = self.transform(volume = input_image, mask3d = mask_image)
-            input_tensor = transformed["volume"]
-            mask_tensor = transformed["mask3d"]
+            input_image = transformed["volume"]
+            mask_image = transformed["mask3d"]
 
-        if input_tensor.ndim == 4 and mask_tensor.ndim == 4:
-            # TODO: Augmentation to convert to tensor if not convert it here add function for it
-            # NEW conversion from D,H,W,C into C,D,H,W
-            input_tensor = input_tensor.permute(3, 0, 1, 2)
-            mask_tensor = mask_tensor.permute(3, 0, 1, 2)
+        input_tensor, mask_tensor = convert_to_tensor(input_image, mask_image)
+        # TODO: Augmentation to convert to tensor if not convert it here add function for it
+        # NEW conversion from D,H,W,C into C,D,H,W
+        input_tensor = input_tensor.permute(3, 0, 1, 2)
+        mask_tensor = mask_tensor.permute(3, 0, 1, 2)
 
-            # OLD conversion from D,C,H,W to C,D,H,W
-            # input_tensor = input_tensor.permute(1, 0, 2, 3)
-            # mask_tensor = mask_tensor.permute(1, 0, 2, 3)
+        # OLD conversion from D,C,H,W to C,D,H,W
+        # input_tensor = input_tensor.permute(1, 0, 2, 3)
+        # mask_tensor = mask_tensor.permute(1, 0, 2, 3)
 
         return input_tensor, mask_tensor
 
@@ -107,20 +100,17 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
         raise NotImplementedError
 
     @classmethod # Initiates an instance of the class
-    def create_dataset(cls, splits, config: dict, phase: str):
-
-        loaders_config = config["loaders"]
+    def create_dataset(cls, splits, loaders_config: dict, seed, phase: str):
         
         assert phase in loaders_config, f"{phase} not found in config"
         
-        channels_to_load = loaders_config.get("channels_to_load", [])
+        phase_config = loaders_config.get(phase) or {} # If key exists but its None it will return {} so it will run
 
-        phase_config = loaders_config[phase]
         phase_transforms_config = phase_config.get("transforms", [])
-        seed = config["seed"]
-
         transform_pipeline = AugmentationTransformer(phase_transforms_config, seed)._create_transform()
         
+        channels_to_load = loaders_config.get("channels_to_load", [])
+
         generate_data = bool(loaders_config.get("generate_data", False))
         num_images = int(loaders_config.get("num_images", 1))
 
@@ -250,74 +240,40 @@ def collect_samples(
     return grouped_samples
 
 
-def ordered_split(
-    grouped_samples: dict[dict[np.ndarray]],
-    train_frac: float,
-    val_frac: float,
-    test_frac: float | None = None,
-):
-    if test_frac is None:
-        assert abs(train_frac + val_frac - 1) == 0
+def ordered_split(grouped_samples, train_frac, val_frac, test_frac=None):
+    total_frac = train_frac + val_frac
+    
+    if test_frac is not None:
+       total_frac += test_frac
+    
+    assert abs(total_frac - 1) == 0
 
-    assert abs(train_frac + val_frac + test_frac - 1) == 0
+    def shuffle_and_slice(samples):
+        shuffled = [samples[i] for i in np.random.permutation(len(samples))]
+        n = len(shuffled)
+        tr = int(round(n * train_frac))
+        va = int(round(n * val_frac))
+        chunks = [shuffled[:tr], shuffled[tr:tr + va]]
+        if test_frac is not None:
+            chunks.append(shuffled[tr + va:])
+        return chunks
 
-    n_negatives = len(grouped_samples[0])
-    n_positives = len(grouped_samples[1])
+    names = ["train", "val"] + (["test"] if test_frac is not None else [])
+    neg_chunks = shuffle_and_slice(grouped_samples[0])
+    pos_chunks = shuffle_and_slice(grouped_samples[1])
 
-    # Generate random permutation for each positive vs negative tile
-    p0 = np.random.permutation(n_negatives)
-    p1 = np.random.permutation(n_positives)
-
-    # Extract from the dictionary of positive and negative tiles the name&input&mask by order of the permutations
-    group_pairs0 = [grouped_samples[0][i] for i in p0]
-    group_pairs1 = [grouped_samples[1][i] for i in p1]
-
-    tr_neg = int(round(n_negatives * train_frac))
-    va_neg = int(round(n_negatives * val_frac))
-
-    tr_pos = int(round(n_positives * train_frac))
-    va_pos = int(round(n_positives * val_frac))
-
-    neg_ptr = 0
-    pos_ptr = 0
-
-    def take_split(n_neg_take, n_pos_take):
-        nonlocal neg_ptr, pos_ptr
-
-        group_pairs_neg = group_pairs0[neg_ptr:neg_ptr + n_neg_take]
-        group_pairs_pos = group_pairs1[pos_ptr:pos_ptr + n_pos_take]
-
-        neg_ptr += n_neg_take
-        pos_ptr += n_pos_take
-
-        group_pairs_neg.extend(group_pairs_pos)
-
-        return group_pairs_neg
-
-    splits = {
-        "train": take_split(tr_neg, tr_pos),
-        "val":   take_split(va_neg, va_pos),
-    }
-
-    if test_frac:
-        te_neg = n_negatives - tr_neg - va_neg
-        te_pos = n_positives - tr_pos - va_pos
-        splits["test"] = take_split(te_neg, te_pos)
-
-    return splits
+    return {name: neg + pos for name, neg, pos in zip(names, neg_chunks, pos_chunks)}
 
 
-def build_datasets(config):
-
-    loaders_config = config["loaders"]
+def build_datasets(loaders_config, seed):
 
     grouped_sample_paths = collect_samples(
         loaders_config["raw_path"],
         loaders_config["label_path"],
     )
 
-    train_frac = loaders_config.get("split_train", 0.6) 
-    val_frac = loaders_config.get("split_val", 0.2)
+    train_frac = loaders_config.get("split_train", 0.7) 
+    val_frac = loaders_config.get("split_val", 0.15)
 
     # TODO: Handle if test fraction is None or not present 
     # This will have wide different things, first the split will not happen for the test
@@ -329,7 +285,7 @@ def build_datasets(config):
     # Seems complex but for now this is enough
     # TODO: Also handle in the case that the phase contains a path to a folder
     # would perhaps change a few things but i dont know for certain
-    test_frac = loaders_config.get("split_test", 0.2)     
+    test_frac = loaders_config.get("split_test", 0.15)     
 
     splits = ordered_split(
         grouped_sample_paths,
@@ -341,18 +297,19 @@ def build_datasets(config):
     datasets = dict()
     
     for phase in ("train", "val", "test"):
-        datasets[phase] = get_dataset_class(loaders_config).create_dataset(splits, config, phase) #[0] What is this for???
+        datasets[phase] = get_dataset_class(loaders_config).create_dataset(splits, loaders_config, seed, phase) #[0] What is this for???
     
     return datasets
 
 
 def build_dataloaders(
     config: dict
-):
-
-    datasets = build_datasets(config)
-
+    ):
+    
     loaders_config = config["loaders"]
+    seed = config["seed"]
+    
+    datasets = build_datasets(loaders_config, seed)
 
     batch_size = loaders_config.get("batch_size", 16)
     num_workers = loaders_config.get("num_workers", 1)
@@ -421,74 +378,3 @@ def get_dataset_class(loaders_config: dict):
 #         torch.manual_seed(worker_seed)
 
 #     return seed_worker
-
-
-def show_split_pairs(batch): 
-
-    import matplotlib.pyplot as plt
-
-    raw, label = batch
-
-    print(raw.shape)
-    print(label.shape)
-
-    for i in range(raw.shape[0]):
-
-        _raw = raw[i]
-        _label = label[i]
-
-        print(_raw.shape, "in loop")
-        print(_label.shape, "in loop")
-
-        sybrgold = torch.amax(_raw, dim=1)[0]  # FIRST CHANNEL ONLY
-        mask = torch.amax(_label, dim=1)[0]  # FIRST CHANNEL ONLY
-
-        print(sybrgold.shape)
-        print(mask.shape)
-
-        sybrgold = sybrgold.detach().cpu().numpy()
-        mask = mask.detach().cpu().numpy()
-
-        fig, ax = plt.subplots(1, 3, figsize=(9, 3))
-
-        ax[0].imshow(sybrgold, cmap="gray")
-        ax[0].set_title(f"original sybrgold")
-        ax[0].axis("off")
-
-        ax[1].imshow(mask, cmap="gray")
-        ax[1].set_title("mask")
-        ax[1].axis("off")
-
-        # overlay
-        ax[2].imshow(sybrgold, cmap="gray")
-        ax[2].imshow(mask, alpha=0.4)
-        ax[2].set_title("overlay")
-        ax[2].axis("off")
-
-    plt.tight_layout()
-    plt.show()
-
-
-
-if __name__ == "__main__":
-    
-    from Scripts.NeuralNetworkSegmentation.config import load_config_yaml
-    from Scripts.NeuralNetworkSegmentation.utils import seed_everything
-    
-    seed_everything(47)
-    
-    config = load_config_yaml("/data/joao/Materials/Joao_repository/Scripts/NeuralNetworkSegmentation/config.yml")
-
-    print(config)
-
-    dataloaders = build_dataloaders(config)
-
-    val_loader = dataloaders["train"]
-    print(val_loader)
-    
-    for batch in val_loader:
-        show_split_pairs(batch)
-        inp, lab = batch
-        print(inp.shape, "main inp shape")
-        print(lab.shape, "main lab shape")
-
