@@ -29,7 +29,6 @@ def convert_to_numpy(*inputs):
     """
 
     def _to_numpy(i):
-        print(type(i))
         assert isinstance(i, torch.Tensor), "Expected input to be torch.Tensor"
         return i.detach().cpu().numpy()
 
