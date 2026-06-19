@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import torch
+from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 
 from Scripts.NeuralNetworkSegmentation.models.unet import is_model_2d
 from Scripts.NeuralNetworkSegmentation.metrics import compute_confusion_matrix
-
+from Scripts.NeuralNetworkSegmentation.visualization import model_test_preview, plot_line
 # TODO: PASS THIS TO UTILS OR LOSS FN
 def compute_class_weights_from_dataloader(dataloader, num_classes, device):  #conver the script to run using the array of train not the dataloader
     class_counts = torch.zeros(num_classes, device=device)
@@ -73,7 +77,7 @@ class ModelTrainer:
         self.loaders = loaders
         self.max_num_epochs = max_num_epochs
         self.device = device
-
+        self.log_writer = SummaryWriter(Path(f"{save_dir}/log"))
 
     def train(self):
 
@@ -142,7 +146,9 @@ class ModelTrainer:
         final_confusion_matrix = []
 
         self.model.eval()
-        
+
+        preview_idx = 0
+
         with torch.no_grad():
             for batch_idx, batch in enumerate(self.loaders["test"]):
 
@@ -150,14 +156,17 @@ class ModelTrainer:
                 input, target = input.to(self.device), target.to(self.device)
 
                 output, loss = self._forward_pass_(input, target)
-                
+
                 eval_score = self.eval_criterion(output, target)
-                
+
                 confusion_matrix = compute_confusion_matrix(output, target)
                 final_confusion_matrix.append(confusion_matrix)
 
                 epoch_loss += loss.item()
                 epoch_eval_score += eval_score
+
+                model_test_preview(self.log_writer, input, target, output, i=preview_idx)
+                preview_idx += output.shape[0]
 
             epoch_loss = epoch_loss / len(self.loaders["test"])
             epoch_eval_score = epoch_eval_score / len(self.loaders["test"])
@@ -171,32 +180,34 @@ class ModelTrainer:
 
     def fit(self):
 
-        train_losses = []
-        train_eval_scores = []
-
-        validation_losses = []
-        validation_eval_scores = []
-
         for epoch in range(self.max_num_epochs):
             print(f"Epoch {epoch+1}\n-------------------------------")
 
             train_loss, train_eval = self.train()
 
-            train_losses.append(train_loss)
-            train_eval_scores.append(train_eval)
-
+            self.log_writer.add_scalar('Loss/train', train_loss, epoch)
+            self.log_writer.add_scalar('Eval/train', train_eval, epoch)
+           
             val_loss, val_eval = self.validation()
 
-            validation_losses.append(val_loss)
-            validation_eval_scores.append(val_eval)
+            self.log_writer.add_scalar('Loss/val', val_loss, epoch)
+            self.log_writer.add_scalar('Eval/val', val_eval, epoch)
 
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
 
         test_loss, test_eval_score, confusion_matrix = self.test()
 
+        self.log_writer.add_scalar('Loss/test', test_loss, epoch)
+        self.log_writer.add_scalar('Eval/test', test_eval_score, epoch)
+        
         print(confusion_matrix)
         
+        output_path = Path(f"{self.save_dir}/{self.save_model_name}.pt")
+        torch.save(self.model.state_dict(), output_path)
+        
+        print(f"Saved model: {output_path}")
+
 
     def _forward_pass_(self, input, target): # TODO: Transpose output into correct format??
         """
