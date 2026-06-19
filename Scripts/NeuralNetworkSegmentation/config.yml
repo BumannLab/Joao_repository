@@ -17,59 +17,45 @@ lr_scheduler:
   gamma: 0.1 # Multiplicative factor applied when the scheduler steps.
 
 loss_criterion:
-  name: "DiceCELoss" # Loss function to build. Supported names depend on loss.py.
-  include_background: True # Whether the background class contributes to the Dice term.
+  name: "DiceFocalLoss" # Loss function to build. Supported names depend on loss.py.
+  smooth: True # Whether the background class contributes to the Dice term.
   lambda_dice: 0.7 # Weight of the Dice part inside DiceCELoss.
-  lambda_ce: 0.3 # Weight of the Cross Entropy part inside DiceCELoss.
+  lambda_focal: 0.3 # Weight of the Cross Entropy part inside DiceCELoss.
   smooth: 1.0 # Smoothing constant added to the Dice numerator/denominator for stability.
 
 eval_criterion:
   name: "BlobsAveragePrecision"
   input_channel: 1
-  threshold: 0.5 
+  threshold: [0.5]
   iou_threshold: 0.5
   min_instance_size: null
-  metric: "precision"
+  metric: "accuracy"
+
+trainer:
+  num_epochs: 1000
 
 loaders:
-
   dataset: standard
-
-  raw_path: Data/RAW_DATASET/B.e202.21394/FINAL_DATASET/inputs # Path to the input images used for training.
+  raw_path: /home/MockDataset/inputs # Path to the input images used for training.
   channels_to_load: [0] # Channel indices to load from each image.
+  label_path: /home/MockDataset/masks # Path to the segmentation masks matching the input images.
   
-  label_path: Data/RAW_DATASET/B.e202.21394/FINAL_DATASET/masks # Path to the segmentation masks matching the input images.
+  split_train: 0.6 # Fraction of the dataset assigned to the training split.
+  split_val: 0.2 # Fraction of the dataset assigned to the validation split.
+  split_test: 0.2 # Fraction of the dataset assigned to the test split.
   
-  split_train: 0.2 # Fraction of the dataset assigned to the training split.
-  split_val: 0.4 # Fraction of the dataset assigned to the validation split.
-  split_test: 0.4 # Fraction of the dataset assigned to the test split.
-  
-  batch_size: 1
-  num_workers: 1
+  batch_size: 16
+  num_workers: 4
 
   generate_data: False # Whether to create a generated dataset before training.
   num_images: 15 # Number of images/events to generate when data generation is enabled.
 
   train:
     transforms:
-
+      
       - name: CenterCrop
         height: 128
         width: 128
-
-      - name: OneOf
-        transforms:
-          - name: CenterCrop
-            height: 128
-            width: 128
-          - name: Rotate
-            angle_range: [-180, 180]
-            p: 1.0
-        p: 1.0
-
-      - name: Rotate
-        angle_range: [-180, 180] 
-        p: 1.0
 
   val:
     transforms:
@@ -83,12 +69,10 @@ loaders:
         height: 128
         width: 128
 
-trainer:
-  num_epochs: 50
 
 
 save_point:
-  out_dir: "/data/joao/Materials/Joao_repository/mTB_segmentation/testing_config_run"
+  out_dir: "Test_run"
   out_model_name: "model_1"
     
 seed: 47
