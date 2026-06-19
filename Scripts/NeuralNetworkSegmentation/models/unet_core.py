@@ -8,7 +8,6 @@ from torch import nn
 # allows for the result of the unet be the same size as the input different from the Unet defined in the first article
 
 class ConvolutionBlock(nn.Module):
-    # TODO: Add batch normalization?
     def __init__(self, in_channels: int, out_channels: int, use_batchnorm, dropout_rate, in_3d):
         super().__init__()
 
