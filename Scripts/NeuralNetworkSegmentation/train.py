@@ -4,9 +4,12 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
+from monai.metrics import LossMetric
+from monai.networks.utils import one_hot
+
 from Scripts.NeuralNetworkSegmentation.models.unet import is_model_2d
 from Scripts.NeuralNetworkSegmentation.metrics import compute_confusion_matrix
-from Scripts.NeuralNetworkSegmentation.visualization import model_test_preview, plot_line
+from Scripts.NeuralNetworkSegmentation.visualization import model_test_preview
 # TODO: PASS THIS TO UTILS OR LOSS FN
 def compute_class_weights_from_dataloader(dataloader, num_classes, device):  #conver the script to run using the array of train not the dataloader
     class_counts = torch.zeros(num_classes, device=device)
@@ -82,8 +85,8 @@ class ModelTrainer:
     def train(self):
 
         epoch_loss = 0
-        epoch_eval_score = 0
-        
+
+        self.eval_criterion.reset()
         self.model.train()
 
         for batch_idx, batch in enumerate(self.loaders["train"]):
@@ -93,17 +96,16 @@ class ModelTrainer:
 
             output, loss = self._forward_pass_(input, target)
 
-            eval_score = self.eval_criterion(output, target)
+            self._update_eval_(output, target)
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
             
             epoch_loss += loss.item()
-            epoch_eval_score += eval_score
 
         epoch_loss = epoch_loss / len(self.loaders["train"])
-        epoch_eval_score = epoch_eval_score / len(self.loaders["train"])
+        epoch_eval_score = self.eval_criterion.aggregate(reduction="mean").item()
         
         print(f"Training stats. Loss: {epoch_loss:>9f}. Evaluation score: {epoch_eval_score:>9f}")
 
@@ -113,10 +115,10 @@ class ModelTrainer:
     def validation(self):
 
         epoch_loss = 0
-        epoch_eval_score = 0
-        
+
+        self.eval_criterion.reset()
         self.model.eval()
-        
+
         with torch.no_grad():
             for batch_idx, batch in enumerate(self.loaders["val"]):
 
@@ -125,13 +127,12 @@ class ModelTrainer:
 
                 output, loss = self._forward_pass_(input, target)
                 
-                eval_score = self.eval_criterion(output, target)
+                self._update_eval_(output, target)
 
                 epoch_loss += loss.item()
-                epoch_eval_score += eval_score
 
             epoch_loss = epoch_loss / len(self.loaders["val"])
-            epoch_eval_score = epoch_eval_score / len(self.loaders["val"])
+            epoch_eval_score = self.eval_criterion.aggregate(reduction="mean").item()
 
             print(f"Validation stats. Loss: {epoch_loss:>9f}. Evaluation score: {epoch_eval_score:>9f}")
 
@@ -141,10 +142,10 @@ class ModelTrainer:
     def test(self):
 
         epoch_loss = 0
-        epoch_eval_score = 0
 
         final_confusion_matrix = []
 
+        self.eval_criterion.reset()
         self.model.eval()
 
         preview_idx = 0
@@ -157,19 +158,18 @@ class ModelTrainer:
 
                 output, loss = self._forward_pass_(input, target)
 
-                eval_score = self.eval_criterion(output, target)
+                self._update_eval_(output, target)
 
                 confusion_matrix = compute_confusion_matrix(output, target)
                 final_confusion_matrix.append(confusion_matrix)
 
                 epoch_loss += loss.item()
-                epoch_eval_score += eval_score
 
                 model_test_preview(self.log_writer, input, target, output, i=preview_idx)
                 preview_idx += output.shape[0]
 
             epoch_loss = epoch_loss / len(self.loaders["test"])
-            epoch_eval_score = epoch_eval_score / len(self.loaders["test"])
+            epoch_eval_score = self.eval_criterion.aggregate(reduction="mean").item()
 
             print(f"Test stats. Loss: {epoch_loss:>9f}. Evaluation score: {epoch_eval_score:>9f}")
 
@@ -179,6 +179,8 @@ class ModelTrainer:
 
 
     def fit(self):
+
+        best = 0
 
         for epoch in range(self.max_num_epochs):
             print(f"Epoch {epoch+1}\n-------------------------------")
@@ -196,6 +198,10 @@ class ModelTrainer:
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
 
+            if val_eval > best:
+                best = val_eval
+                self.save_checkpoint()
+
         test_loss, test_eval_score, confusion_matrix = self.test()
 
         self.log_writer.add_scalar('Loss/test', test_loss, epoch)
@@ -203,11 +209,28 @@ class ModelTrainer:
         
         print(confusion_matrix)
         
-        output_path = Path(f"{self.save_dir}/{self.save_model_name}.pt")
+        output_path = Path(f"{self.save_dir}/final_{self.save_model_name}.pt")
         torch.save(self.model.state_dict(), output_path)
         
         print(f"Saved model: {output_path}")
 
+        self.log_writer.close()
+
+    def _update_eval_(self, output, target):
+        if isinstance(self.eval_criterion, LossMetric):
+            # LossMetric wraps custom functions (e.g. BlobsAveragePrecision) that handle
+            # their own format conversion internally — pass tensors as-is.
+            self.eval_criterion(output, target)
+        else:
+            # MONAI metrics expect matching shapes for y_pred and y.
+            # Sigmoid + out_channels=1: both are already B×1×... so pass directly.
+            # Softmax / multi-class: convert integer target to one-hot B×C×....
+            num_classes = output.shape[1]
+            if num_classes == 1:
+                self.eval_criterion(output, target.float())
+            else:
+                target_one_hot = one_hot(target, num_classes=num_classes)
+                self.eval_criterion(output, target_one_hot)
 
     def _forward_pass_(self, input, target): # TODO: Transpose output into correct format??
         """
@@ -235,3 +258,8 @@ class ModelTrainer:
 
         # return probabilities and loss
         return output, loss
+
+
+    def save_checkpoint(self):
+        output_path = Path(f"{self.save_dir}/best_val_score_{self.save_model_name}.pt")
+        torch.save(self.model.state_dict(), output_path)
