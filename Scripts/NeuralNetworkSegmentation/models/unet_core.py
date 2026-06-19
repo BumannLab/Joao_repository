@@ -1,31 +1,33 @@
 import torch
 from torch import nn
 
-# Important: 
-# Default Unet uses padding = "valid", however to be able to use this padding size only images of size
-# superior to 256 can run through the network.
+# NOTE: Default Unet uses padding = "valid", and at the end the resulting image is not the same size as the input image,
+# to handle this they increase the image size through padding and the artificial border added has the mirror mode 
+
 # For now to allow images of 128x128 and 64x64 to train, padding = "same" will be used. Also because this 
 # allows for the result of the unet be the same size as the input different from the Unet defined in the first article
-# TODO: Check if all the core blocks are right, yes for now
-# TODO: Check if the end of unet should be sigmoid or softmax? softmax
 
 class ConvolutionBlock(nn.Module):
     # TODO: Add batch normalization?
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, in_3d):
+    def __init__(self, in_channels: int, out_channels: int, use_batchnorm, dropout_rate, in_3d):
         super().__init__()
 
         bias = True if not use_batchnorm else False
 
         conv = nn.Conv3d if in_3d else nn.Conv2d
         bach_norm = nn.BatchNorm3d if in_3d else nn.BatchNorm2d
+        dropout = nn.Dropout3d if in_3d else nn.Dropout2d
         
         self.convolution_operation = nn.Sequential(
             conv(in_channels, out_channels, kernel_size=3, padding="same", bias=bias),
             bach_norm(out_channels) if use_batchnorm else nn.Identity(),
             nn.ReLU(),
+            dropout(dropout_rate) if dropout_rate > 0.0 else nn.Identity(),
+
             conv(out_channels, out_channels, kernel_size=3, padding="same", bias=bias),
             bach_norm(out_channels) if use_batchnorm else nn.Identity(),
             nn.ReLU(),
+            dropout(dropout_rate) if dropout_rate > 0.0 else nn.Identity(),
         )
 
     def forward(self, x):

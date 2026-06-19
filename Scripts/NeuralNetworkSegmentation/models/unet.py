@@ -1,10 +1,12 @@
 from torch import nn
 
+from torchinfo import summary
+
+
 from Scripts.NeuralNetworkSegmentation.utils import get_class
 from Scripts.NeuralNetworkSegmentation.models.unet_core import ConvolutionBlock, Encoder, Decoder
 
 #TODO Add dropout
-#TODO Replace channels by feature map (variable name)
 
 class UNet(nn.Module): 
     def __init__(self, 
@@ -13,11 +15,11 @@ class UNet(nn.Module):
                  features=64,
                  num_blocks=4,
                  use_batchnorm=False,
+                 dropout_rate=0.0,
+                 final_layer_type = "sigmoid",
                  is_3d=True):
         
         super().__init__()
-
-        self.is_3d = is_3d
 
         if num_blocks < 1:
             raise ValueError("num_blocks must be at least 1.")
@@ -44,6 +46,11 @@ class UNet(nn.Module):
 
         self.final_conv = conv(features, out_channels, kernel_size=1)
 
+        self.final_layer_type = nn.Softmax(dim = 1) if final_layer_type == "softmax" else nn.Sigmoid()
+
+        self.is_3d = is_3d
+        
+
     def forward(self, x):
         skip_connections = []
 
@@ -58,7 +65,7 @@ class UNet(nn.Module):
 
         x = self.final_conv(x)
 
-        out = nn.Softmax(dim = 1)(x) # TODO: ASSESS WHETHER THIS IS NECESSARY HERE AFTERWARDS
+        out = self.final_layer_type(x)
 
         return out, x # probabilities, logits
 
@@ -88,7 +95,7 @@ def is_model_2d(model):
 
 if __name__ == "__main__":
 
-    from torchinfo import summary
-
-    model = UNet3D(channels=32, num_blocks=3, use_batchnorm=True)
-    summary(model, (1, 1, 72, 128, 128))
+    model = UNet(in_channels=1, out_channels=2, features=32, num_blocks=3, 
+                 use_batchnorm=True, final_layer_type="softmax", is_3d=True)
+    
+    summary(model, (1, 1, 24, 128, 128))
