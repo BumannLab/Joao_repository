@@ -8,13 +8,15 @@ from monai.losses import (
 # UNet model has a final activation layer that converts logits into probabilities using softmax
 # NOTE: In near future handle missing activation function or just have to be careful when building the config file 
 
+# ADD SOFTDICELOSS
+
 def get_loss(loss_config, weights = None):
     loss_name = loss_config["name"]
     incude_bg = loss_config.get("include_background", True)
     
     sigmoid = loss_config.get("sigmoid", False)
     softmax = loss_config.get("softmax", False)
-
+        
     if all(function is False for function in [sigmoid, softmax]):
         raise ValueError("No functions (sigmoid and softmax) were found in the loss section of" \
         " the config. Please add either one")
@@ -23,13 +25,12 @@ def get_loss(loss_config, weights = None):
         raise ValueError("Both functions (sigmoid and softmax) were found in the loss section of" \
         " the config. Only one can be selected")
 
-
     if loss_name == "DiceLoss":
         smooth = loss_config.get("smooth", 1)
         return DiceLoss(
             # to_onehot_y: Converts target from Bx1[xD]xHxW into BxN[xD]xHxW where N is 
             # the number of classes in the singleton target mask
-            to_onehot_y=True if softmax else sigmoid,
+            to_onehot_y=True if softmax else False,
             sigmoid=sigmoid,
             softmax=softmax, 
             include_background=incude_bg,
@@ -42,7 +43,7 @@ def get_loss(loss_config, weights = None):
         lambda_dice = loss_config.get("lambda_dice", 0.5)
         lambda_ce = loss_config.get("lambda_ce", 0.5)
         return DiceCELoss(
-            to_onehot_y=True,
+            to_onehot_y=True if softmax else False,
             sigmoid=sigmoid,
             softmax=softmax,
             include_background=incude_bg,
@@ -56,7 +57,7 @@ def get_loss(loss_config, weights = None):
     elif loss_name == "FocalLoss": # 
         gamma = loss_config.get("gamma", 1)
         return FocalLoss(
-            to_onehot_y=True,
+            to_onehot_y=True if softmax else False,
             use_softmax=softmax if softmax else sigmoid,
             gamma=gamma,
             include_background=incude_bg,
@@ -67,10 +68,8 @@ def get_loss(loss_config, weights = None):
         gamma = loss_config.get("gamma", 1)
         lambda_dice = loss_config.get("lambda_dice", 0.5)
         lambda_focal = loss_config.get("lambda_focal", 0.5)
-
-
         return DiceFocalLoss(
-            to_onehot_y=True,
+            to_onehot_y=True if softmax else False,
             sigmoid=sigmoid,
             softmax=softmax,
             include_background=incude_bg,
