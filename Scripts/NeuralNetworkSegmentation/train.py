@@ -96,7 +96,7 @@ class ModelTrainer:
 
             output, loss = self._forward_pass_(input, target)
 
-            self._update_eval_(output, target)
+            self.eval_criterion(output, target)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -127,7 +127,7 @@ class ModelTrainer:
 
                 output, loss = self._forward_pass_(input, target)
                 
-                self._update_eval_(output, target)
+                self.eval_criterion(output, target)
 
                 epoch_loss += loss.item()
 
@@ -158,8 +158,8 @@ class ModelTrainer:
 
                 output, loss = self._forward_pass_(input, target)
 
-                self._update_eval_(output, target)
-
+                self.eval_criterion(output, target)
+                
                 confusion_matrix = compute_confusion_matrix(output, target)
                 final_confusion_matrix.append(confusion_matrix)
 
@@ -216,21 +216,6 @@ class ModelTrainer:
 
         self.log_writer.close()
 
-    def _update_eval_(self, output, target):
-        if isinstance(self.eval_criterion, LossMetric):
-            # LossMetric wraps custom functions (e.g. BlobsAveragePrecision) that handle
-            # their own format conversion internally — pass tensors as-is.
-            self.eval_criterion(output, target)
-        else:
-            # MONAI metrics expect matching shapes for y_pred and y.
-            # Sigmoid + out_channels=1: both are already B×1×... so pass directly.
-            # Softmax / multi-class: convert integer target to one-hot B×C×....
-            num_classes = output.shape[1]
-            if num_classes == 1:
-                self.eval_criterion(output, target.float())
-            else:
-                target_one_hot = one_hot(target, num_classes=num_classes)
-                self.eval_criterion(output, target_one_hot)
 
     def _forward_pass_(self, input, target): # TODO: Transpose output into correct format??
         """
