@@ -1,13 +1,88 @@
+import warnings
+
 import numpy as np
 import torch
 import torch.nn.functional as F
-from monai.metrics import LossMetric, DiceMetric, MeanIoU, get_confusion_matrix
+from monai.losses import DiceLoss
+from monai.metrics import DiceMetric, MeanIoU, get_confusion_matrix
+from monai.metrics.metric import CumulativeIterationMetric
 from skimage import measure
+from monai.utils import MetricReduction, LossReduction 
 
 from Scripts.NeuralNetworkSegmentation.utils import convert_to_numpy
 
 
-class BlobsAveragePrecision:
+class HardDice(DiceMetric):
+    def __init__(
+        self, 
+        threshold_value = 0.5, 
+        include_background = True, 
+        reduction = MetricReduction.MEAN,
+        ignore_empty = True,
+        **kwargs,
+    ):
+        super().__init__(
+            include_background=include_background,
+            reduction=reduction,
+            get_not_nans=False,
+            ignore_empty=ignore_empty,
+        )
+
+        self.threshold_value = threshold_value
+
+    def __call__(self, y_pred, y):
+        
+        if y_pred.shape[1] == 1:
+            y_pred = (y_pred > self.threshold_value).float()
+        else:
+            argmax = torch.argmax(y_pred, dim=1)
+            y_pred = F.one_hot(argmax, num_classes=y_pred.shape[1]).movedim(-1, 1).float()
+        
+        return super().__call__(y_pred, y)
+    
+
+class SoftDice(DiceLoss):
+    def __init__(
+        self,
+        mode="softmax",
+        include_background=True,
+        to_onehot_y=None,
+        squared_pred=False,
+        jaccard=False,
+        reduction=LossReduction.MEAN,
+        smooth_nr=1e-5,
+        smooth_dr=1e-5,
+        batch=False,
+        weight=None,
+        **kwargs,
+    ):
+        if mode not in ("sigmoid", "softmax"):
+            raise ValueError("mode must be 'sigmoid' or 'softmax'")
+
+        # softmax mode expects class-index targets → convert to one-hot by default
+        # sigmoid mode expects per-channel binary targets → no conversion needed
+        if to_onehot_y is None:
+            to_onehot_y = mode == "softmax"
+
+        super().__init__(
+            include_background=include_background,
+            to_onehot_y=to_onehot_y,
+            sigmoid=mode == "sigmoid",
+            softmax=mode == "softmax",
+            squared_pred=squared_pred,
+            jaccard=jaccard,
+            reduction=reduction,
+            smooth_nr=smooth_nr,
+            smooth_dr=smooth_dr,
+            batch=batch,
+            weight=weight,
+        )
+
+    def forward(self, y_pred, y):
+        return 1.0 - super().forward(y_pred, y)
+
+
+class BlobsAveragePrecision(CumulativeIterationMetric):
     def __init__(
         self,
         input_channel=1,
@@ -17,6 +92,8 @@ class BlobsAveragePrecision:
         metric="precision",
         **kwargs,
     ):
+        super().__init__()
+
         if threshold is None:
             threshold = 0.5
 
@@ -29,20 +106,25 @@ class BlobsAveragePrecision:
         self.min_instance_size = min_instance_size
         self.metric = metric
 
-    def __call__(self, input, target):
+    def _compute_tensor(self, input, target):
         input_np, target_np = convert_to_numpy(input, target)
 
         batch_scores = []
         for prediction, target_mask in zip(input_np, target_np, strict=True):
-            # Convert each target sample to an instance-labeled segmentation once,
-            # then score the prediction across several foreground thresholds.
             target_seg = self.target_to_seg(target_mask)
-
             score = self._score_segmentation(self.input_to_seg(prediction, self.threshold), target_seg)
-
             batch_scores.append(score)
 
-        return torch.tensor(batch_scores, dtype=input.dtype if input.is_floating_point() else torch.float32).mean()
+        dtype = input.dtype if input.is_floating_point() else torch.float32
+        return torch.tensor(batch_scores, dtype=dtype)
+
+    def aggregate(self, reduction=MetricReduction.MEAN):
+        data = self.get_buffer()
+        if reduction == MetricReduction.MEAN:
+            return data.mean()
+        if reduction == MetricReduction.SUM:
+            return data.sum()
+        return data
 
     def input_to_seg(self, prediction, threshold):
         # The model predicts background/foreground channels; we segment only the
@@ -141,29 +223,33 @@ def get_eval_criterion(metrics_config: dict):
 
         metric_name = metrics_config["name"]
 
-        if metric_name == "Dice":
-            include_bg = metrics_config.get("include_background", True)
-            return DiceMetric(include_background=include_bg)
+        if metric_name == "SoftDice":
+            return SoftDice(**metrics_config)
+        
+        if metric_name == "HardDice":
+            return HardDice(**metrics_config)
 
         if metric_name == "MeanIoU":
-            include_bg = metrics_config.get("include_background", True)
-            return MeanIoU(include_background=include_bg)
+            warnings.warn("Still not fully implemented")
+            return MeanIoU(**metrics_config)
 
         if metric_name == "BlobsAveragePrecision":
-            return LossMetric(loss_fn=BlobsAveragePrecision(**metrics_config))
+            return BlobsAveragePrecision(**metrics_config)
 
         raise ValueError(f"Unsupported metric: {metric_name}")
 
 
-def compute_confusion_matrix(output, target, threshold = 0.5): # TODO: ADD THRESHOLD INSTEAD OF ARGMAX AFTER
+def compute_confusion_matrix(output, target, threshold=0.5):
     n_channels = output.shape[1]
 
-    output_flat = F.one_hot(output.argmax(dim=1), num_classes=n_channels).movedim(-1, 1).contiguous()
-    target_flat = F.one_hot(target.squeeze(dim=1), num_classes=n_channels).movedim(-1, 1).contiguous()
+    if n_channels > 1:
+        output = F.one_hot(output.argmax(dim=1), num_classes=n_channels).movedim(-1, 1)
+        target = F.one_hot(target.squeeze(dim=1), num_classes=n_channels).movedim(-1, 1)
+    else:
+        output = (output > threshold).float()
 
-    confusion_matrix, = convert_to_numpy(get_confusion_matrix(output_flat, target_flat))
-    # MONAI returns shape B x C x 4 here: one row per batch item, one row per
-    # class/channel, and the 4 values are TP, FP, TN, FN. It is not a single
-    # prediction channel; summing over axis 0 below collapses the batch only.
+    confusion_matrix, = convert_to_numpy(get_confusion_matrix(output.contiguous(), target.contiguous()))
+    cm = np.sum(confusion_matrix, axis=0)
 
-    return np.sum(confusion_matrix, axis = 0)
+    return cm[..., [2, 1, 3, 0]]  # TN, FP /n FN, TP
+
