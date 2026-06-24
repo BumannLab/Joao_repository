@@ -91,7 +91,7 @@ class ModelTrainer:
 
         for batch_idx, batch in enumerate(self.loaders["train"]):
 
-            input, target = batch
+            input, target = batch # BC[D]HW , B1[D]HW ; 1 can be equal to C if OneHot Augmentation is used
             input, target = input.to(self.device), target.to(self.device)
 
             output, loss = self._forward_pass_(input, target)
@@ -207,6 +207,7 @@ class ModelTrainer:
         self.log_writer.add_scalar('Loss/test', test_loss, epoch)
         self.log_writer.add_scalar('Eval/test', test_eval_score, epoch)
         
+        np.set_printoptions(suppress=True)
         print(confusion_matrix)
         
         output_path = Path(f"{self.save_dir}/final_{self.save_model_name}.pt")
@@ -248,3 +249,4 @@ class ModelTrainer:
     def save_checkpoint(self):
         output_path = Path(f"{self.save_dir}/best_val_score_{self.save_model_name}.pt")
         torch.save(self.model.state_dict(), output_path)
+        
