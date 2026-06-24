@@ -44,7 +44,7 @@ class HardDice(DiceMetric):
 class SoftDice(DiceLoss):
     def __init__(
         self,
-        mode="softmax",
+        mode="sigmoid",
         include_background=True,
         to_onehot_y=None,
         squared_pred=False,
@@ -85,7 +85,7 @@ class SoftDice(DiceLoss):
 class BlobsAveragePrecision(CumulativeIterationMetric):
     def __init__(
         self,
-        input_channel=1,
+        input_channel=0,
         threshold=None,
         iou_threshold=0.5,
         min_instance_size=None,
@@ -243,13 +243,11 @@ def compute_confusion_matrix(output, target, threshold=0.5):
     n_channels = output.shape[1]
 
     if n_channels > 1:
-        output = F.one_hot(output.argmax(dim=1), num_classes=n_channels).movedim(-1, 1)
+        output = torch.argmax(output, dim=1).movedim(-1, 1)
         target = F.one_hot(target.squeeze(dim=1), num_classes=n_channels).movedim(-1, 1)
     else:
         output = (output > threshold).float()
 
     confusion_matrix, = convert_to_numpy(get_confusion_matrix(output.contiguous(), target.contiguous()))
-    cm = np.sum(confusion_matrix, axis=0)
-
-    return cm[..., [2, 1, 3, 0]]  # TN, FP /n FN, TP
-
+    
+    return np.sum(confusion_matrix, axis=0)  # TP, FP, TN, FN
