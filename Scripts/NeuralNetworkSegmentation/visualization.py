@@ -18,7 +18,11 @@ def model_test_preview(tensorboard_writer, input, mask, pred, i):
     for channels in zip(input, mask, pred):
 
         c_input, c_mask, c_pred = channels
-        c_pred = torch.argmax(c_pred, dim=0, keepdim=True)
+
+        if c_pred.shape[0] > 1:
+            c_pred = torch.argmax(c_pred, dim=0, keepdim=True)
+        else:
+            c_pred = (c_pred > 0.5).float()
 
         c_input, c_mask, c_pred = convert_to_numpy(c_input, c_mask, c_pred)
 
