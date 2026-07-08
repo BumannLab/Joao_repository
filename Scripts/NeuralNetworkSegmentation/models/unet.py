@@ -1,3 +1,5 @@
+import warnings
+
 from torch import nn
 
 from torchinfo import summary
@@ -9,15 +11,17 @@ from Scripts.NeuralNetworkSegmentation.models.unet_core import ConvolutionBlock,
 #TODO Add dropout
 
 class UNet(nn.Module): 
-    def __init__(self, 
-                 in_channels=1,
-                 out_channels=2,
-                 features=64,
-                 num_blocks=4,
-                 use_batchnorm=False,
-                 dropout_rate=0.0,
-                 final_layer = "sigmoid",
-                 is_3d=True):
+    def __init__(
+        self, 
+        in_channels=1,
+        out_channels=2,
+        features=64,
+        num_blocks=4,
+        use_batchnorm=False,
+        dropout_rate=0.0,
+        final_layer = "sigmoid",
+        is_3d=True
+    ):
         
         super().__init__()
 
@@ -47,6 +51,7 @@ class UNet(nn.Module):
         self.final_conv = conv(features, out_channels, kernel_size=1)
         
         if final_layer == "softmax":
+            raise NotImplementedError("Softmax final layer is not yet supported.")
             self.final_layer = nn.Softmax(dim = 1)
         
         elif final_layer == "sigmoid":
@@ -81,13 +86,54 @@ class UNet(nn.Module):
 
 
 class UNet2D(UNet):
-    def __init__(self, in_channels = 1, out_channels = 2, features = 64, num_blocks = 4, use_batchnorm = False, dropout_rate=0.0, final_layer="sigmoid", **kwargs):
-        super().__init__(in_channels, out_channels, features, num_blocks, use_batchnorm, dropout_rate, final_layer, is_3d = False)
+
+    def __init__(
+        self, 
+        in_channels = 1,
+        out_channels = 2,
+        features = 64,
+        num_blocks = 4,
+        use_batchnorm = False,
+        dropout_rate=0.0,
+        final_layer="sigmoid",
+        **kwargs
+    ):
+        
+        super().__init__(
+            in_channels,
+            out_channels,
+            features,
+            num_blocks,
+            use_batchnorm,
+            dropout_rate,
+            final_layer,
+            is_3d = False
+        )
 
 
 class UNet3D(UNet):
-    def __init__(self, in_channels = 1, out_channels = 2, features = 64, num_blocks = 4, use_batchnorm = False, dropout_rate=0.0, final_layer="sigmoid", **kwargs):
-        super().__init__(in_channels, out_channels, features, num_blocks, use_batchnorm, dropout_rate, final_layer, is_3d = True)
+    def __init__(
+        self,
+        in_channels = 1,
+        out_channels = 2,
+        features = 64,
+        num_blocks = 4,
+        use_batchnorm = False,
+        dropout_rate=0.0,
+        final_layer="sigmoid",
+        **kwargs
+    ):
+        
+        super().__init__(
+            in_channels,
+            out_channels,
+            features,
+            num_blocks,
+            use_batchnorm,
+            dropout_rate,
+            final_layer,
+            is_3d = True
+        )
 
 
 def get_model(model_config):
