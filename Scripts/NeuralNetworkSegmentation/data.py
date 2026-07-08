@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import torch
 from torch.utils.data import DataLoader, Dataset
 
 from Scripts.utils import get_images_path, read_image
@@ -64,37 +65,24 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
 
         input_image, mask_image = self.load_sample_arrays(idx)
         
-        # NEW
+        # To Float
         input_image = input_image / 65535
         mask_image = mask_image / 255
         
         input_image = input_image.astype(np.float32)
-        mask_image = mask_image.astype(np.long)
+        mask_image = mask_image.astype(np.long) # 
 
-        # OLD
-        # input_tensor = torch.from_numpy(input_image / 65535).to(torch.float32)
-        # mask_tensor = torch.from_numpy(mask_image / 255).to(torch.long)
-        
         # NEW convert into albumentations desired shape D,H,W,C (shape before hand was D,C,H,W)
         input_image = np.transpose(input_image, (0, 2, 3, 1))
         mask_image = np.transpose(mask_image, (0, 2, 3, 1))
         
         if self.transform is not None:
             transformed = self.transform(volume = input_image, mask3d = mask_image)
+            
             input_image = transformed["volume"]
             mask_image = transformed["mask3d"]
 
-        input_tensor, mask_tensor = convert_to_tensor(input_image, mask_image)
-        # TODO: Augmentation to convert to tensor if not convert it here add function for it
-        # NEW conversion from D,H,W,C into C,D,H,W
-        input_tensor = input_tensor.permute(3, 0, 1, 2)
-        mask_tensor = mask_tensor.permute(3, 0, 1, 2)
-
-        # OLD conversion from D,C,H,W to C,D,H,W
-        # input_tensor = input_tensor.permute(1, 0, 2, 3)
-        # mask_tensor = mask_tensor.permute(1, 0, 2, 3)
-
-        return input_tensor, mask_tensor
+        return input_image, mask_image
 
     def load_sample_arrays(self, idx):
         raise NotImplementedError
@@ -104,7 +92,7 @@ class BaseMycobacteriumTuberculosisDataset(ConfigDataset):
         
         assert phase in loaders_config, f"{phase} not found in config"
         
-        phase_config = loaders_config.get(phase) or {} # If key exists but its None it will return {} so it will run
+        phase_config = loaders_config.get(phase) or {} # If key exists but its None it will return {}
 
         phase_transforms_config = phase_config.get("transforms", [])
         transform_pipeline = AugmentationTransformer(phase_transforms_config, seed)._create_transform()
@@ -181,24 +169,30 @@ class LazyMycobacteriumTuberculosisDataset(BaseMycobacteriumTuberculosisDataset)
 
 def read_input(input_path: Path, channels_to_load: list | None = None):
     
-    input_image = read_image(input_path)
+    input_image = read_image(input_path) # Shape is CxHxW or DxCxHxW
 
     if channels_to_load:
         input_image = np.take(input_image, indices=channels_to_load, axis=-3)
 
-    while input_image.ndim != 4:
+    while input_image.ndim != 4: 
+
+        # CxHxW -> 1xCxHxW
         input_image = np.expand_dims(input_image, axis=0)
 
     return input_image
 
 
 def read_mask(mask_path: Path):
-    mask = read_image(mask_path).astype(np.uint8)
+
+    mask = read_image(mask_path).astype(np.uint8) # Shape is HxW or DxHxW
 
     mask[mask > 0] = 255
 
-    while mask.ndim != 4:
-        mask = np.expand_dims(mask, axis=-3)
+    # Needs to have 4 dimensions so both 2D and 3D operations dont lead to failure
+    while mask.ndim != 4: 
+        
+        # HxW -> 1x1xHxW; DxHxW -> Dx1xHxW
+        mask = np.expand_dims(mask, axis=-3) 
 
     return mask
 
