@@ -8,6 +8,8 @@ from monai.metrics import DiceMetric, MeanIoU, get_confusion_matrix
 from monai.metrics.metric import CumulativeIterationMetric
 from skimage import measure
 from monai.utils import MetricReduction, LossReduction 
+from monai.networks.utils import one_hot
+
 
 from Scripts.NeuralNetworkSegmentation.utils import convert_to_numpy
 
@@ -31,17 +33,15 @@ class HardDice(DiceMetric):
         self.threshold_value = threshold_value
 
     def __call__(self, y_pred, y):
-        
-        if y_pred.shape[1] == 1:
-            y_pred = (y_pred > self.threshold_value).float()
-        else:
-            argmax = torch.argmax(y_pred, dim=1)
-            y_pred = F.one_hot(argmax, num_classes=y_pred.shape[1]).movedim(-1, 1).float()
-        
+
+        y_pred = (y_pred > self.threshold_value).float()
+
+        y = y.float()
+
         return super().__call__(y_pred, y)
     
 
-class SoftDice(DiceLoss):
+class SoftDice(CumulativeIterationMetric):
     def __init__(
         self,
         mode="sigmoid",
@@ -49,13 +49,13 @@ class SoftDice(DiceLoss):
         to_onehot_y=None,
         squared_pred=False,
         jaccard=False,
-        reduction=LossReduction.MEAN,
         smooth_nr=1e-5,
         smooth_dr=1e-5,
-        batch=False,
         weight=None,
         **kwargs,
     ):
+        super().__init__()
+
         if mode not in ("sigmoid", "softmax"):
             raise ValueError("mode must be 'sigmoid' or 'softmax'")
 
@@ -64,22 +64,36 @@ class SoftDice(DiceLoss):
         if to_onehot_y is None:
             to_onehot_y = mode == "softmax"
 
-        super().__init__(
+        self.dice_loss = DiceLoss(
             include_background=include_background,
             to_onehot_y=to_onehot_y,
-            sigmoid=mode == "sigmoid",
-            softmax=mode == "softmax",
+            sigmoid=False,   # input is already post-activation probabilities
+            softmax=False,   # input is already post-activation probabilities
             squared_pred=squared_pred,
             jaccard=jaccard,
-            reduction=reduction,
+            reduction=LossReduction.MEAN,
             smooth_nr=smooth_nr,
             smooth_dr=smooth_dr,
-            batch=batch,
+            batch=False,
             weight=weight,
         )
 
-    def forward(self, y_pred, y):
-        return 1.0 - super().forward(y_pred, y)
+    def _compute_tensor(self, y_pred, y):
+        scores = []
+        for i in range(y_pred.shape[0]):
+            loss = self.dice_loss(y_pred[i:i+1], y[i:i+1])
+            scores.append(1.0 - loss.item())
+        return torch.tensor(scores, dtype=y_pred.dtype, device=y_pred.device)
+
+    def aggregate(self, reduction=MetricReduction.MEAN):
+        data = self.get_buffer()
+        if data is None:
+            raise RuntimeError("No data accumulated.")
+        if reduction == MetricReduction.MEAN:
+            return data.mean()
+        if reduction == MetricReduction.SUM:
+            return data.sum()
+        return data
 
 
 class BlobsAveragePrecision(CumulativeIterationMetric):
@@ -240,13 +254,8 @@ def get_eval_criterion(metrics_config: dict):
 
 
 def compute_confusion_matrix(output, target, threshold=0.5):
-    n_channels = output.shape[1]
 
-    if n_channels > 1:
-        output = torch.argmax(output, dim=1).movedim(-1, 1)
-        target = F.one_hot(target.squeeze(dim=1), num_classes=n_channels).movedim(-1, 1)
-    else:
-        output = (output > threshold).float()
+    output = (output > threshold).float()
 
     confusion_matrix, = convert_to_numpy(get_confusion_matrix(output.contiguous(), target.contiguous()))
     
