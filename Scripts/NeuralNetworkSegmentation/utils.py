@@ -48,7 +48,7 @@ def convert_to_tensor(*inputs):
 
     def _to_tensor(i):
         assert isinstance(i, np.ndarray), "Expected input to be torch.Tensor"
-        return torch.from_numpy(i)
+        return torch.from_numpy()
 
     return (_to_tensor(i) for i in inputs)
 
