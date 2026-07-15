@@ -110,12 +110,13 @@ class OneHot(A.DualTransform):
 
     
 class AugmentationTransformer:
-    def __init__(self, phase_transform_config, seed):
-    
+    def __init__(self, phase_transform_config, seed, data_stats=None):
+
         """Factory class for creating data augmentation pipelines."""
 
         self.phase_transform_config = phase_transform_config
         self.seed = seed
+        self.data_stats = data_stats or {}
 
     def _create_transform(self):
 
@@ -131,6 +132,17 @@ class AugmentationTransformer:
         assert "name" in augmentation, f"No name found in {augmentation}"
 
         augmentation_name = augmentation.pop("name")
+
+        if augmentation_name == "Normalize":
+
+            if all(self.data_stats.get(stat) is not None for stat in ["mean", "std"]):
+                # setdefault: an explicit mean/std/max_pixel_value in the YAML entry still wins.
+                augmentation.setdefault("mean", self.data_stats["mean"])
+                augmentation.setdefault("std", self.data_stats["std"])
+                # data is already scaled to [0, 1] by the time this transform runs (see
+                # _prepare_raw), and self.data_stats was computed on that same scale, so
+                # max_pixel_value must be 1.0, not albumentations' default of 255.0.
+                augmentation.setdefault("max_pixel_value", 1.0)
 
         if augmentation_name == "OneOf":
             assert "transforms" in augmentation, f"No transforms found in {augmentation_name}: {augmentation}"
