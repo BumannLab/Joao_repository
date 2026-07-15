@@ -64,7 +64,7 @@ class SliceReplication3DFilter(A.Transform3D):
 
         return median_filter(mask3d, size=size)
     
-    
+
 class OneHot(A.DualTransform):
     """Transforms mask into a onehot encoded matrix. There is no probability.
 
@@ -136,12 +136,11 @@ class AugmentationTransformer:
         if augmentation_name == "Normalize":
 
             if all(self.data_stats.get(stat) is not None for stat in ["mean", "std"]):
+               
                 # setdefault: an explicit mean/std/max_pixel_value in the YAML entry still wins.
                 augmentation.setdefault("mean", self.data_stats["mean"])
                 augmentation.setdefault("std", self.data_stats["std"])
-                # data is already scaled to [0, 1] by the time this transform runs (see
-                # _prepare_raw), and self.data_stats was computed on that same scale, so
-                # max_pixel_value must be 1.0, not albumentations' default of 255.0.
+                # NOTE: First Augmentation should be ToFloat
                 augmentation.setdefault("max_pixel_value", 1.0)
 
         if augmentation_name == "OneOf":
