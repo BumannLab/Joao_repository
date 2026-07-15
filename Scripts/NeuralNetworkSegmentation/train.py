@@ -304,7 +304,8 @@ class ModelTrainer:
         Handles 2d and 3d inputs if the model is 2d it will remove the singleton z-dimension
         """
 
-        input = input[:, self.channels_to_load]
+        if self.channels_to_load is not None:
+            input = input[:, self.channels_to_load]
 
         if is_model_2d(self.model):
 
