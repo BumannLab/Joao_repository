@@ -1,10 +1,14 @@
 import importlib
 import random
-from pathlib import Path
-from datetime import datetime
+import os
+import shutil
+import logging
+import sys
 
 import torch
+from torch import nn
 import numpy as np
+from torch.optim import Optimizer
 
 
 def get_class(class_name: str, modules: list[str]) -> type:
@@ -53,10 +57,6 @@ def convert_to_tensor(*inputs):
     return (_to_tensor(i) for i in inputs)
 
 
-def build_seed_from_time():
-    return int(datetime.now().timestamp())
-
-
 def seed_everything(seed):
     """ Seeds all the packages into one seed
     
@@ -71,17 +71,77 @@ def seed_everything(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def get_save_dir_model_name(config):
-    # Make sure it exists or else we train a model that will not be saved   
-    assert config.get("save_point"), "Make sure to add a save point that contains the directory to write the model output and the name of the model name"
-    save_point_config =  config["save_point"]
+def save_checkpoint(state: dict, is_best: bool, checkpoint_dir: str):
+    """Saves model and training parameters at '{checkpoint_dir}/last_checkpoint.pytorch'.
+    If is_best==True saves '{checkpoint_dir}/best_checkpoint.pytorch' as well.
 
-    save_dir = save_point_config["out_dir"]
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
-    
-    save_model_name = save_point_config["out_model_name"]
+    Args:
+        state: contains model's state_dict, optimizer's state_dict, epoch
+            and best evaluation metric value so far
+        is_best: if True state contains the best model seen so far
+        checkpoint_dir: directory where the checkpoint are to be saved
+    """
 
-    return save_dir, save_model_name
+    if not os.path.exists(checkpoint_dir):
+        os.mkdir(checkpoint_dir)
+
+    last_file_path = os.path.join(checkpoint_dir, "last_checkpoint.pytorch")
+    torch.save(state, last_file_path)
+    if is_best:
+        best_file_path = os.path.join(checkpoint_dir, "best_checkpoint.pytorch")
+        shutil.copyfile(last_file_path, best_file_path)
 
 
+def load_checkpoint(
+    checkpoint_path: str,
+    model: nn.Module,
+    optimizer: Optimizer = None,
+    model_key: str = "model_state_dict",
+    optimizer_key: str = "optimizer_state_dict",
+) -> dict:
+    """Loads model and training parameters from a given checkpoint_path
+    If optimizer is provided, loads optimizer's state_dict of as well.
+
+    Args:
+        checkpoint_path: path to the checkpoint to be loaded
+        model: model into which the parameters are to be copied
+        optimizer: optimizer instance into which the parameters are to be copied
+        model_key: key corresponding to the model state_dict in the checkpoint
+        optimizer_key: key corresponding to the optimizer state_dict in the checkpoint
+
+    Returns:
+        state dict stored in the checkpoint
+    """
+    if not os.path.exists(checkpoint_path):
+        raise OSError(f"Checkpoint '{checkpoint_path}' does not exist")
+
+    state = torch.load(checkpoint_path, map_location="cpu")
+    model.load_state_dict(state[model_key])
+
+    if optimizer is not None:
+        optimizer.load_state_dict(state[optimizer_key])
+
+    return state
+
+
+loggers = {}
+
+
+def get_logger(name: str, level=logging.INFO) -> logging.Logger:
+    """Initializes and returns a logger with the given name."""
+
+    global loggers
+    if loggers.get(name) is not None:
+        return loggers[name]
+    else:
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
+        # Logging to console
+        stream_handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter("%(asctime)s [%(threadName)s] %(levelname)s %(name)s - %(message)s")
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+
+        loggers[name] = logger
+
+        return logger
