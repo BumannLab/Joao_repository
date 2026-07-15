@@ -1,82 +1,164 @@
+from collections.abc import Sequence
+
 import torch
 from torch import nn
+
+from monai.networks.blocks import Convolution
+from monai.networks.layers.factories import Pool, Conv
 
 # NOTE: Default Unet uses padding = "valid", and at the end the resulting image is not the same size as the input image,
 # to handle this they increase the image size through padding and the artificial border added has the mirror mode 
 
-# For now to allow images of 128x128 and 64x64 to train, padding = "same" will be used. Also because this 
-# allows for the result of the unet be the same size as the input different from the Unet defined in the first article
 
-class ConvolutionBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm: bool, dropout_rate:float, in_3d: bool):
+class ConvBlock(nn.Module):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        out_channels: int,
+        strides: Sequence[int] | int = 1,
+        kernel_size: Sequence[int] | int = 3,
+        adn_ordering: str = "NAD",
+        act: tuple | str | None = "RELU",
+        norm: tuple | str | None = "BATCH",
+        dropout: tuple | str | float | None = None,
+        bias: bool = True,
+        padding: Sequence[int] | int | None = None,
+    ):
         super().__init__()
 
-        bias = True if not use_batchnorm else False
-
-        conv = nn.Conv3d if in_3d else nn.Conv2d
-        bach_norm = nn.BatchNorm3d if in_3d else nn.BatchNorm2d
-        dropout = nn.Dropout3d if in_3d else nn.Dropout2d
-        
-        self.convolution_operation = nn.Sequential(
-            conv(in_channels, out_channels, kernel_size=3, padding="same", bias=bias),
-            bach_norm(out_channels) if use_batchnorm else nn.Identity(),
-            nn.ReLU(),
-            dropout(dropout_rate) if dropout_rate > 0.0 else nn.Identity(),
-
-            conv(out_channels, out_channels, kernel_size=3, padding="same", bias=bias),
-            bach_norm(out_channels) if use_batchnorm else nn.Identity(),
-            nn.ReLU(),
-            dropout(dropout_rate) if dropout_rate > 0.0 else nn.Identity(),
+        self.convblock = nn.Sequential(
+            Convolution(
+                spatial_dims=spatial_dims,
+                in_channels=in_channels,
+                out_channels=out_channels,
+                strides=strides,
+                kernel_size=kernel_size,
+                adn_ordering=adn_ordering,
+                act=act,
+                norm=norm,
+                dropout=dropout,
+                dropout_dim=spatial_dims, # Perhaps add this as input var
+                dilation=1,
+                groups=1,
+                bias=bias,
+                padding=padding,
+                output_padding=None,
+            ),
+            Convolution(
+                spatial_dims=spatial_dims,
+                in_channels=out_channels,
+                out_channels=out_channels,
+                strides=1,
+                kernel_size=kernel_size,
+                adn_ordering=adn_ordering,
+                act=act,
+                norm=norm,
+                dropout=dropout,
+                dropout_dim=spatial_dims, # Perhaps add this as input var
+                dilation=1,
+                groups=1,
+                bias=bias,
+                padding=padding,
+                output_padding=None,
+            ),
         )
+        print(bias)
 
     def forward(self, x):
-        x = self.convolution_operation(x)
+        x = self.convblock(x)
         return x
 
 
-class Encoder(ConvolutionBlock):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm: bool, dropout_rate: float, in_3d: bool):
-        super().__init__(in_channels, out_channels, use_batchnorm, dropout_rate, in_3d) 
+class Encoder(ConvBlock):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        out_channels: int,
+        strides: Sequence[int] | int = 1,
+        kernel_size: Sequence[int] | int = 3,
+        adn_ordering: str = "NAD",
+        act: tuple | str | None = "RELU",
+        norm: tuple | str | None = "BATCH",
+        bias = True,
+        dropout: tuple | str | float | None = None,
+        padding: Sequence[int] | int | None = None,
+    ):
+        
+        super().__init__(
+            spatial_dims,
+            in_channels,
+            out_channels,
+            strides,
+            kernel_size,
+            adn_ordering,
+            act,
+            norm,
+            dropout,
+            bias,
+            padding,
+        ) 
 
-        max_pool = nn.MaxPool3d if in_3d else nn.MaxPool2d
+        max_pool = Pool[Pool.MAX, spatial_dims]
         
         self.max_pool = max_pool(kernel_size = 2, stride = 2)
 
-
     def forward(self, x):
-        x = super().forward(x)
-        x_down = self.max_pool(x)
-        return x_down, x
+        x_skip = super().forward(x)
+        x = self.max_pool(x_skip)
+        return x, x_skip
 
 
-class Decoder(ConvolutionBlock):
-    def __init__(self, in_channels: int, out_channels: int, use_batchnorm: bool, dropout_rate: float, in_3d: bool):
-        super().__init__(in_channels, out_channels, use_batchnorm, dropout_rate, in_3d)
-
-        bias = True if not use_batchnorm else False
-
-        conv_transp = nn.ConvTranspose3d if in_3d else nn.ConvTranspose2d
+class Decoder(ConvBlock):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        out_channels: int,
+        strides: Sequence[int] | int = 1,
+        kernel_size: Sequence[int] | int = 3,
+        adn_ordering: str = "NAD",
+        act: tuple | str | None = "RELU",
+        norm: tuple | str | None = "BATCH",
+        bias = True,
+        dropout: tuple | str | float | None = None,
+        padding: Sequence[int] | int | None = None,
+    ):
         
-        self.in_3d = in_3d
-        self.t_convolution_operation = conv_transp(in_channels = in_channels, out_channels = out_channels, kernel_size = 2,
-                                                           stride = 2, padding = 0, bias=bias)
+        super().__init__(
+            spatial_dims,
+            in_channels,
+            out_channels,
+            strides,
+            kernel_size,
+            adn_ordering,
+            act,
+            norm,
+            dropout,
+            bias,
+            padding,
+        )
+        
+        conv_trans = Conv[Conv.CONVTRANS, spatial_dims]
+        
+        self.conv_trans = conv_trans(in_channels = in_channels, 
+                                    out_channels = out_channels,
+                                    kernel_size = 2,
+                                   stride = 2,
+                                   padding = 0, 
+                                   bias=bias)
     
     def forward(self, x, skip): 
-        
-        if self.in_3d:
-            dim = 1 if x.ndim == 5 else 0
-        else:
-            dim = 1 if x.ndim == 4 else 0
-        
-        x = self.t_convolution_operation(x)
-
-        x = torch.cat([x, skip], dim=dim)
+                
+        x = self.conv_trans(x)
+        x = torch.cat([skip, x], dim=1)
         x = super().forward(x)
+        
         return x
     
 
-if __name__ == "__main__":
-    print(ConvolutionBlock(1, 2, use_batchnorm=True))
-
-    print(Encoder(1, 2, use_batchnorm=False))
-    print(Decoder(1, 2, use_batchnorm=False))
+if __name__ ==  "__main__":
+    print(Encoder(3, 1, 2, bias=True, dropout=0.5))
+    
+    print(Decoder(3, 1, 2, norm = "BATCH", dropout=0.5))
