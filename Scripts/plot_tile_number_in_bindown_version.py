@@ -8,14 +8,14 @@ from utils import get_images_path
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_snake
 
 
-TILES_PATH = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month/MAX"
-BINDOWN_IMAGE_FILE = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month/5xbindown_stitched/stitched_01_bin5x.tif"
+TILES_PATH = "/data/joao/mTBData/CopperBlockTest/10xSYBRGold_DAPI_acquisiton_for_stitching/MAX"
+BINDOWN_IMAGE_FILE = "/Data_HDD/joao/mtb_data/30.04.2026_B2019.9082/SYBRGold_CD68_LAM_DAPI/5xbindown_stitched/stitched_01_bin5x.tif"
 
 TILE_HEIGHT = 2304
 TILE_WIDTH = 2304
 TILE_OVERLAP = 5
 
-BINDOWN_BY = 5
+BINDOWN_BY = 0
 
 
 def adjusted_tile_center_pos(all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by):
@@ -26,10 +26,13 @@ def adjusted_tile_center_pos(all_tiles_positions, tile_height, tile_width, pixel
         
         tile_column, tile_row = tile_pos
 
-        tile_center_x = ((tile_width / 2) + (((tile_width - pixels_to_remove_w) * (tile_column)))) / bindown_by
-
-        tile_center_y = ((tile_height / 2) + (((tile_height - pixels_to_remove_h) * (tile_row)))) / bindown_by
-
+        tile_center_x = ((tile_width / 2) + (((tile_width - pixels_to_remove_w) * (tile_column))))
+        tile_center_y = ((tile_height / 2) + (((tile_height - pixels_to_remove_h) * (tile_row))))
+        
+        if bindown_by > 0:
+            tile_center_x = tile_center_x / bindown_by
+            tile_center_y = tile_center_y / bindown_by
+        
         adjusted_tile_center_positions.append((tile_center_x, tile_center_y))
 
     return adjusted_tile_center_positions
@@ -74,7 +77,7 @@ def main(tiles_path, tile_height, tile_width, tile_overlap, bindown_img_path, bi
 
     adjusted_tile_center_positions = adjusted_tile_center_pos(all_tiles_positions, tile_height, tile_width, pixels_to_remove_h, pixels_to_remove_w, bindown_by)
 
-    bindown_img_path = Path(bindown_img_path)
+    # bindown_img_path = Path(bindown_img_path)
     bindown_img_shape = tiff.imread(bindown_img_path).shape
 
     out_path = bindown_img_path.with_stem("labeled_tiles_" + bindown_img_path.stem.split("_")[-1])

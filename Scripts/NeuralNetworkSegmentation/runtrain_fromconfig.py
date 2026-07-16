@@ -13,7 +13,7 @@ from Scripts.NeuralNetworkSegmentation.train import ModelTrainer
 from Scripts.NeuralNetworkSegmentation.metrics import get_eval_criterion
 
 
-CONFIG_PATH = "/home/Documents/Joao_repository/Scripts/NeuralNetworkSegmentation/config.yml"
+CONFIG_PATH = "Results/MycobacteriaTuberculosisSegmentation/TestNewScript/previous2dpipeline.yml"
 
 def main(
         config_path,

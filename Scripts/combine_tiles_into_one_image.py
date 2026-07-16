@@ -3,10 +3,10 @@ import tifffile as tiff
 
 from utils import get_images_path, read_image, AXES
 
-TILES_PER_IMAGE = 100
+TILES_PER_IMAGE = 42
 
-path =  "/data/joao/mTBData/B2020.20260_scanned_after_1_month/SYBRGold_CD68_LAM_DAPI_after_1_month" # "Joao_repository/Results/voxel_analysis/New_mTB_Data_4Channel_MAX/Images"
-odirname = "/data/joao/mTBData/B2020.20260_scanned_after_1_month/stacks"
+path =  "/data/joao/Materials/Joao_repository/Data/RAW_DATASET/B2022.10246/Threshold800_MeanFilter1000&250/uncertain" # "Joao_repository/Results/voxel_analysis/New_mTB_Data_4Channel_MAX/Images"
+odirname = "/data/joao/Materials/Joao_repository"
 
 
 img_path = get_images_path(path, ".nd2", ".tif", ".tiff")

@@ -6,7 +6,10 @@ def convert_row_numerical(row: str):
     row_numerical = 0
 
     for char in row:
-        row_numerical = (row_numerical * 26) + (ord(char) - ord("A"))
+        
+        assert ord(char) <= ord("T"), "Found row with a bigger size"
+
+        row_numerical = (row_numerical * 20) + (ord(char) - ord("A"))
     
     return row_numerical
 

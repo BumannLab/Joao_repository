@@ -12,8 +12,8 @@ from utils import read_tiff_image, slice_channel_threshold
 from compute_direction_and_cut_overlap import compute_overlap_pixels, get_all_tiles_position_snake
 
 
-VOXEL_CLUSTERS_FILE = "/data/joao/Materials/Joao_repository/Results/B2020.20260/SYBRGold_CD68_LAM_DAPI/SYBRGold_GET800/voxel_clusters_size_over5_SYBRGold_greater_equal_800.tsv"
-BINDOWN_IMAGE_FILE = "/data/joao/mTBData/B2020.20260/SYBRGold_CD68_LAM_DAPI_2/stitched_bindown5x/stitched_01_bin5x.tif" # Preferably the sybrgold bindown channel
+VOXEL_CLUSTERS_FILE = "/data/joao/Materials/Joao_repository/Results/30.04.2026_B2019.9082/SYBRGold_CD68_LAM_DAPI/SYBRGold_GET800/voxel_clusters_size_over5_SYBRGold_greater_equal_800.tsv"
+BINDOWN_IMAGE_FILE = "/Data_HDD/joao/mtb_data/30.04.2026_B2019.9082/SYBRGold_CD68_LAM_DAPI/5xbindown_stitched/stitched_01_bin5x.tif" # Preferably the sybrgold bindown channel
 
 TILE_HEIGHT = 2304
 TILE_WIDTH = 2304
@@ -26,7 +26,10 @@ MAXIMUM_DISPLAYED_VALUE = 800
 USE_FILTERS = True
 FILTERS = "DAPI<=250,SYBRGold>=1000"
 
-ODIRFILENAME = "/data/joao/Materials/Joao_repository/Results/B2020.20260/SYBRGold_CD68_LAM_DAPI/SYBRGold_GET800/DAPI_mean_lt250_SYBRGold_mean_gt1000_bindown5x"
+CIRCLE_RADIUS = 60 # 28
+CIRCLE_WIDTH = 10 # 10
+
+ODIRFILENAME = "/data/joao/Materials/Joao_repository/Results/TEST_CIRCLE_SIZE/B2019.9082/SYBRGold_CD68_LAM_DAPI/60radius_10width"
 
 @dataclass
 class Cluster:
@@ -149,16 +152,13 @@ def plot_bindown_with_voxel_clusters_png_overview(bindown_image, cluster_data, m
     )
 
 
-def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_data, odirfilename):
+def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_data, circle_radius, circle_width, odirfilename):
         
         img = Image.fromarray(
             np.zeros(image_shape, dtype=np.uint16)
         )
 
         draw = ImageDraw.Draw(img)
-
-        circle_radius = 28
-        circle_width = 10
 
         for cluster in cluster_data:
             
@@ -178,7 +178,7 @@ def plot_bindown_with_voxel_clusters_tiff_overview(image_shape, cluster_data, od
         tiff.imwrite(f"{odirfilename}.tiff", np.array(img))
 
 
-def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value, odirfilename, use_filters, filters = None):
+def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_overlap, bindown_by, maximum_displayed_value, circle_radius, circle_width, odirfilename, use_filters, filters = None):
     
     odirname = Path(odirfilename).parent
     odirname.mkdir(parents= True, exist_ok=True)
@@ -201,7 +201,7 @@ def main(voxel_clusters_file, bindown_image_file, tile_height, tile_width, tile_
     plot_bindown_with_voxel_clusters_png_overview(bindown_image, resized_cluster_data, maximum_displayed_value, odirfilename)
     print("png done")
 
-    plot_bindown_with_voxel_clusters_tiff_overview(bindown_image.shape, resized_cluster_data, odirfilename)
+    plot_bindown_with_voxel_clusters_tiff_overview(bindown_image.shape, resized_cluster_data, circle_radius, circle_width, odirfilename)
     print("tiff done")
 
 
@@ -214,8 +214,11 @@ if __name__ == "__main__":
          TILE_OVERLAP,
          BINDOWN_BY,
          MAXIMUM_DISPLAYED_VALUE,
+         CIRCLE_RADIUS,
+         CIRCLE_WIDTH,
          ODIRFILENAME,
          USE_FILTERS,
-         FILTERS)
+         FILTERS,
+)
     
     

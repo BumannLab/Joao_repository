@@ -6,15 +6,10 @@ from itertools import repeat
 import tifffile as tiff
 import numpy as np
 from tqdm import tqdm
+import click
 
 from utils import get_images_path, read_image
 from ND2_Image_Processing.nd2_metadata_retrieval import *
-
-# TODO: Load metadata for one image and recycle it for all of the rest
-
-
-IMAGE_DIR = "/Data_HDD/joao/mtb_data/30.04.2026_B2019.9082/SYBRGold_CD68_LAM_DAPI"
-NUM_PROCESSORS = 15
 
 
 def write_tiff(path, image, metadata, resolution = None):
@@ -59,18 +54,22 @@ def analyse_clusters_and_pixels(args_iter):
         out_metadata["spacing"] = voxel_size["PhysicalSizeZ"]
         out_metadata["LUTs"] = channel_luts
 
-        write_tiff(out_path, image, out_metadata, resolution)
+        write_tiff(out_path, image, out_metadata, resolution)        
+     
 
+@click.command()
+@click.option("--tiles_dir", help="Folder containing the raw nd2 files")
+@click.option("--threads", type=int, default=1, help="Number of threads")
+def main(tiles_dir, threads):
+    
+    tiles_dir = Path(tiles_dir)
 
-def main(image_dir, num_processers: int = 1):
-    image_dir = Path(image_dir)
-
-    odirname = image_dir / "MAX"
+    odirname = tiles_dir / "MAX"
     odirname.mkdir(exist_ok=True)
 
-    images_path = get_images_path(image_dir)
+    images_path = get_images_path(tiles_dir)
     
-    with Pool(processes=num_processers, maxtasksperchild=1) as pool:
+    with Pool(processes=threads, maxtasksperchild=1) as pool:
 
         args_iter = zip(
             images_path,
@@ -86,6 +85,6 @@ def main(image_dir, num_processers: int = 1):
 if __name__ == "__main__":
     start_time = time.time()
 
-    main(IMAGE_DIR, NUM_PROCESSORS)
+    main()
 
     print(f"Finished in {time.time() - start_time} seconds")
