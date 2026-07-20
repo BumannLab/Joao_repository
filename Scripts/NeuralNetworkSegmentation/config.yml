@@ -1,78 +1,79 @@
 model:
-  name: "UNet2D" # Model architecture to build. Supported here: UNet2D, UNet3D.
+  name: "UNet3D" # Model architecture to build. Supported here: UNet2D, UNet3D.
   in_channels: 1 # Number of image channels given to the network.
-  out_channels: 2 # Number of output classes predicted by the final layer.
-  features: 32 # Base number of feature maps; larger values increase model capacity and memory use.
-  use_batchnorm: True # Whether convolution blocks include batch normalization.
-  dropout_rate: 0.0 # Dropout probability used in the model blocks.
+  out_channels: 1 # Number of output classes predicted by the final layer.
+  f_maps: [32, 64, 128] # Base number of feature maps; larger values increase model capacity and memory use.
+  act: RELU
+  norm: BATCH # Whether convolution blocks include batch normalization.
+  dropout: 0.1
 
 optimizer:
-  name: "Adam" # Optimizer to use. Check optimizer.py for the supported names and arguments.
-  lr: 0.0001 # Learning rate.
+  name: Adam # Optimizer to use. Check optimizer.py for the supported names and arguments.
+  lr: 0.002 # Learning rate.
   weight_decay: 0 # L2 regularization strength applied by the optimizer.
 
-lr_scheduler:
-  name: "StepLR" # Learning-rate scheduler applied during training.
-  step_size: 100 # Number of epochs between LR drops.
-  gamma: 0.1 # Multiplicative factor applied when the scheduler steps.
+# lr_scheduler:
+#   name: StepLR
+#   step_size: 100
+#   gamma: 0.1
 
 loss_criterion:
-  name: "DiceFocalLoss" # Loss function to build. Supported names depend on loss.py.
-  smooth: True # Whether the background class contributes to the Dice term.
-  lambda_dice: 0.7 # Weight of the Dice part inside DiceCELoss.
-  lambda_focal: 0.3 # Weight of the Cross Entropy part inside DiceCELoss.
-  smooth: 1.0 # Smoothing constant added to the Dice numerator/denominator for stability.
+  name: DiceFocalLoss
+  sigmoid: True
+  smooth_nr: 0.00001
+  smooth_dr: 0.00001
+  gamma: 1
+  lambda_dice: 0.5
+  lambda_focal: 0.5
+  smooth: 1.0
 
 eval_criterion:
-  name: "BlobsAveragePrecision"
-  input_channel: 1
-  threshold: [0.5]
-  iou_threshold: 0.5
-  min_instance_size: null
-  metric: "accuracy"
+  name: SoftDice
+  mode: sigmoid
+  include_background: True
 
 trainer:
-  num_epochs: 1000
-
+  checkpoint_dir: "Results/NeuralNetworkSegmentationModels"
+  channels_to_load: [0]
+  max_num_epochs: 200
+  log_after_epochs: 1
+  max_val_images: 100
+  
 loaders:
   dataset: standard
-  raw_path: /home/MockDataset/inputs # Path to the input images used for training.
-  channels_to_load: [0] # Channel indices to load from each image.
-  label_path: /home/MockDataset/masks # Path to the segmentation masks matching the input images.
-  
-  split_train: 0.6 # Fraction of the dataset assigned to the training split.
-  split_val: 0.2 # Fraction of the dataset assigned to the validation split.
-  split_test: 0.2 # Fraction of the dataset assigned to the test split.
-  
-  batch_size: 16
-  num_workers: 4
 
-  generate_data: False # Whether to create a generated dataset before training.
-  num_images: 15 # Number of images/events to generate when data generation is enabled.
+  batch_size: 1
+  num_workers: 1
+
+  seed: 47
 
   train:
+    raw_path:  # Path to the input images used for training.
+    label_path: Test_augmentations/MockDataset/train/label # Path to the segmentation masks matching the input images.
+
+    generate_data: False # Whether to create a generated dataset before training.
+    num_images: 15 # Number of images/events to generate when data generation is enabled.
+
     transforms:
-      
+      - name: ToFloat
+        max_value: 65535
       - name: CenterCrop
         height: 128
         width: 128
+      - name: PadIfNeeded3D
+        min_zyx: [24, 128, 128]
+      - name: ToTensor3D
 
   val:
-    transforms:
-      - name: CenterCrop
-        height: 128
-        width: 128
-
-  test:
-    transforms:
-      - name: CenterCrop
-        height: 128
-        width: 128
-
-
-
-save_point:
-  out_dir: "Test_run"
-  out_model_name: "model_1"
+    raw_path: Test_augmentations/MockDataset/validation/input
+    label_path: Test_augmentations/MockDataset/validation/label
     
-seed: 47
+    transforms:
+      - name: ToFloat
+        max_value: 65535
+      - name: PadIfNeeded3D
+        min_zyx: [24, 256, 256]
+      - name: ToTensor3D
+  
+
+device: cuda

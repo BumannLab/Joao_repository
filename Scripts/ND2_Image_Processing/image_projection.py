@@ -8,11 +8,23 @@ import numpy as np
 from tqdm import tqdm
 import click
 
-from utils import get_images_path, read_image
+from utils import get_images_path, read_image, AXES
 from ND2_Image_Processing.nd2_metadata_retrieval import *
 
+# TODO: Load metadata for one image and recycle it for all of the rest
+# TODO: Check whether shape is helpful to record
+# TODO: Handle missing metadata extraction
+# TODO: can rescue nd2 file work when the given number of channels is not given? Get shape and pass it to read_file
 
-def write_tiff(path, image, metadata, resolution = None):
+
+IMAGE_DIR = "/home/Test_augmentations"
+NUM_PROCESSORS = 15
+
+
+def write_tiff(path, image, metadata = None):
+
+    resolution = metadata.pop("resolution", None) if metadata else None
+
     tiff.imwrite(
         path,
         image,
@@ -24,38 +36,61 @@ def write_tiff(path, image, metadata, resolution = None):
 
 def analyse_clusters_and_pixels(args_iter):
         
-        image_path, odirname = args_iter
+        image_path, metadata, odirname = args_iter
         
-        tpl = read_image(image_path, inc_metadata=True)
+        image = read_image(image_path)
 
-        if tpl is None:
+        if image is None:
+            print(f"Got an empty image in {image_path}")
             return 
         
-        image, metadata = tpl
-
         image = np.max(image, axis=0)
 
-        out_metadata = {
-        "mode": "color",
-        "axes": "CYX",
-        "unit": "micron"
-        }
+        metadata["axes"] = AXES[-image.ndim:]
 
         out_path = f"{odirname}/MAX_{image_path.stem}.tif"
-
-        if metadata is None: # The file was corrupted so metadata will not be retrieved
-            write_tiff(out_path, image, out_metadata)
-            return 
         
-        channel_luts = extract_channel_colors_as_luts(metadata)
-        voxel_size = extract_voxel_size(metadata)
-        resolution = get_resolution(voxel_size)
+        write_tiff(out_path, image, metadata)
+        
 
-        out_metadata["spacing"] = voxel_size["PhysicalSizeZ"]
-        out_metadata["LUTs"] = channel_luts
 
+<<<<<<< Updated upstream
         write_tiff(out_path, image, out_metadata, resolution)        
      
+=======
+def get_metadata(images_path):
+
+    out_metadata = {
+        "mode": "color",
+        "unit": "micron" # TODO: Is this always micron? Can i extract it from the image itself?
+        }
+
+    for image_path in images_path:
+        tpl = read_image(image_path, inc_metadata=True)
+        
+        if tpl is not None:
+        
+            _, metadata = tpl
+
+            if metadata is not None:
+                channel_luts = extract_channel_colors_as_luts(metadata)
+                voxel_size = extract_voxel_size(metadata)
+                resolution = get_resolution(voxel_size)
+
+                out_metadata["spacing"] = voxel_size["PhysicalSizeZ"]
+                out_metadata["LUTs"] = channel_luts
+                out_metadata["resolution"] = resolution
+            
+            else: 
+                continue
+
+            return out_metadata
+        
+    print("Warning: no valid image found, metadata will be incomplete")
+    
+    return out_metadata
+
+>>>>>>> Stashed changes
 
 @click.command()
 @click.option("--tiles_dir", help="Folder containing the raw nd2 files")
@@ -67,13 +102,20 @@ def main(tiles_dir, threads):
     odirname = tiles_dir / "MAX"
     odirname.mkdir(exist_ok=True)
 
+<<<<<<< Updated upstream
     images_path = get_images_path(tiles_dir)
+=======
+    images_path = get_images_path(image_dir)
+
+    metadata = get_metadata(images_path)
+>>>>>>> Stashed changes
     
     with Pool(processes=threads, maxtasksperchild=1) as pool:
 
         args_iter = zip(
             images_path,
-            repeat(odirname)
+            repeat(metadata),
+            repeat(odirname),
         )
 
         for _ in tqdm(pool.imap(analyse_clusters_and_pixels,

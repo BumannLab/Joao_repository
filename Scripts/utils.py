@@ -116,37 +116,47 @@ def read_tiff_image(path, inc_metadata=False):
     return tiff.imread(path)
 
 
-def read_nd2_image(path, inc_metadata=False):
+def read_nd2_image(path, inc_metadata=False, shape=None):
+    
     with nd2.ND2File(path) as img:
+        
         try:
             image = img.asarray()
+        
             return (image, img.metadata) if inc_metadata else image
+        
         except ValueError:
+
             print(
                 "File is corrupted. Metadata will not be included. "
                 "Attempting to rescue the file..."
             )
+            
+            if shape is None:
+                shape = (IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS)
 
             frames = nd2.rescue_nd2(
                 path,
-                frame_shape=(IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS),
+                frame_shape=shape,
                 dtype="uint16",
                 verbose=False,
             )
+
             image = np.stack(list(frames))
             image = np.transpose(image, (0, 3, 1, 2))
+                
             
             return (image, None) if inc_metadata else image
 
 
-def read_image(path, inc_metadata = False):
+def read_image(path, inc_metadata=False, shape=None):
 
     if not isinstance(path, Path):
         path = Path(path)
 
     if path.suffix == ".nd2":
         try: 
-            tpl = read_nd2_image(path, inc_metadata)
+            tpl = read_nd2_image(path, inc_metadata, shape)
         
         except ValueError as e: 
             print(f"There was a problem loading {path}.\nThe error in question was {e}.") # Return error

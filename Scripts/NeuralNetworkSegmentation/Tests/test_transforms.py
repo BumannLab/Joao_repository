@@ -1,9 +1,10 @@
 import numpy as np
 import pytest
 
-from ZOrganized_scripts.NeuralNetworkSegmentationConfig.transforms import build_transform_pipeline
+from Scripts.NeuralNetworkSegmentation.transforms import build_transform_pipeline
 
-class TestBuildTransformPipeline
+class TestBuildTransformPipeline:
+    pass
 
 
 @pytest.fixture

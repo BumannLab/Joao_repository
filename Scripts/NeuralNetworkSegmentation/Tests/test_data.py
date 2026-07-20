@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import ZOrganized_scripts.NeuralNetworkSegmentationConfig.data as data_module
+import Scripts.NeuralNetworkSegmentation.data as data_module
 
 
 class TestReadInput:

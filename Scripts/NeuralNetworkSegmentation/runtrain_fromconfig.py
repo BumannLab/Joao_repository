@@ -2,8 +2,6 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
-import torch
-
 from Scripts.NeuralNetworkSegmentation.optimizer import create_optimizer, create_lr_scheduler
 from Scripts.NeuralNetworkSegmentation.models.unet import get_model
 from Scripts.NeuralNetworkSegmentation.loss import get_loss

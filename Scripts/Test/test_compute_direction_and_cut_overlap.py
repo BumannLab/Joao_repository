@@ -1,9 +1,10 @@
 from pathlib import Path
+import itertools
 
 import numpy as np
 import pytest
 
-from compute_direction_and_cut_overlap import (
+from Scripts.compute_direction_and_cut_overlap import (
     compute_overlap_pixels,
     convert_row_numerical,
     cut_overlap,
@@ -15,63 +16,75 @@ from compute_direction_and_cut_overlap import (
 
 
 class TestConvertRowNumerical:
-    def test_single_letter_rows(self):
-        assert convert_row_numerical("A") == 0
-        assert convert_row_numerical("B") == 1
-        assert convert_row_numerical("Z") == 25
+    def test_valid_letters_len_1(self):
+        valid_letters = "ABCDEFGHIJKLMNOPQRST"
+        
+        for char in valid_letters:
+            assert convert_row_numerical(char) == ord(char) - ord("A")
 
-    def test_multiple_letter_rows(self):
+    def test_non_valid_letters_len_1(self):
+        non_valid_letters = "UVWXYZ"
+        
+        for char in non_valid_letters:
+            with pytest.raises(AssertionError):
+                assert convert_row_numerical(char)
+
+    def test_valid_combinations(self):
         assert convert_row_numerical("AA") == 0
-        assert convert_row_numerical("BA") == 26
-        assert convert_row_numerical("AB") == 1
+        assert convert_row_numerical("AT") == 19
+        assert convert_row_numerical("BA") == 20
+        assert convert_row_numerical("BT") == 39
+
+    def test_non_valid_combinations(self):
+        with pytest.raises(AssertionError):
+            convert_row_numerical("AU")
+            convert_row_numerical("AZ")
+            convert_row_numerical("BY")
+            convert_row_numerical("TA")
 
 
 class TestObtainTilePosition:
     def test_with_string(self):
-        assert obtain_tile_position("BA03") == (2, 26)
+        assert obtain_tile_position("BA03") == (2, 20)
 
     def test_with_path(self):
         assert obtain_tile_position(Path("AA01.nd2")) == (0, 0)
 
+class TestGetAllTilesPositionSnake:
 
-def test_get_all_tiles_position_snake():
-    tile_names = [
-        "AA01",
-        "AA02",
-        "AA03",
-        "AB01",
-        "AB02",
-        "AB03",
-        "AC01",
-        "AC02",
-        "AC03",
-    ]
+    def test_normal_case_for_3x3_square(self):
+        tile_names = [
+            "01_AA01",
+            "02_AA02",
+            "03_AA03",
+            "04_AB03",
+            "05_AB02",
+            "06_AB01",
+            "07_AC01",
+            "08_AC02",
+            "09_AC03",
+        ]
+        
+        result = get_all_tiles_position_snake(tile_names)
 
-    result = get_all_tiles_position_snake(tile_names)
+        assert result == [
+            (0, 0), (1, 0), (2, 0),
+            (2, 1), (1, 1), (0, 1),
+            (0, 2), (1, 2), (2, 2),
+        ]
 
-    assert result == [
-        (0, 0), (1, 0), (2, 0),
-        (2, 1), (1, 1), (0, 1),
-        (0, 2), (1, 2), (2, 2),
-    ]
+    def test_duplicates_found(self):
 
+        tile_names = [
+            "01_AA01",
+            "02_AA02",
+            "03_AA03",
+            "03_AA03",
+            "04_AA03"
+        ]
 
-def test_get_all_tiles_position_snake_preserves_duplicates():
-    tile_names = [
-        "AF26_1",
-        "AF26_2",
-        "AF27_1",
-        "AF27_2",
-        "AG26_1",
-        "AG26_2",
-    ]
-
-    result = get_all_tiles_position_snake(tile_names)
-
-    assert result == [
-        (25, 5), (25, 5), (26, 5), (26, 5),
-        (25, 6), (25, 6),
-    ]
+        with pytest.raises(AssertionError):
+            get_all_tiles_position_snake(tile_names)
 
 
 class TestObtainDirectionToRemoveOverlap:
@@ -87,6 +100,9 @@ class TestObtainDirectionToRemoveOverlap:
     def test_odd_row_last_column(self):
         assert obtain_direction_to_remove_overlap((3, 1), 3) == ["top"]
 
+    def test_even_row_last_column(self):
+        assert obtain_direction_to_remove_overlap((2, 2), 2) == ["top", "left"]
+
 
 def test_get_all_tiles_directions_to_remove_overlap():
     tile_names = [
@@ -100,27 +116,6 @@ def test_get_all_tiles_directions_to_remove_overlap():
 
     assert result == [[""], ["left"], ["top", "right"], ["top"]]
 
-
-def test_get_all_tiles_directions_to_remove_overlap_preserves_duplicates():
-    tile_names = [
-        "AF26_1",
-        "AF26_2",
-        "AF27_1",
-        "AF27_2",
-        "AG26_1",
-        "AG26_2",
-    ]
-
-    result = get_all_tiles_directions_to_remove_overlap(tile_names)
-
-    assert result == [
-        [""],
-        [""],
-        ["left"],
-        ["left"],
-        ["top"],
-        ["top"],
-    ]
 
 
 class TestComputeOverlapPixels:

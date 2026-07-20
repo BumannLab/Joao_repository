@@ -94,8 +94,6 @@ class AbstractUnet(nn.Module):
         self.final_conv = conv(current_decoder_in_channels, out_channels, kernel_size=1)
         self.final_layer = nn.Sigmoid()
         self.is_3d = is_3d
-
-        print(bias)
         
     def _forward(self, x):
         skip_connections = []

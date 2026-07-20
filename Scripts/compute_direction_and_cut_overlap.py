@@ -1,53 +1,53 @@
 from math import ceil, floor
 import re
+from pathlib import Path
 
 
 def convert_row_numerical(row: str):
     row_numerical = 0
 
     for char in row:
-        
-        assert ord(char) <= ord("T"), "Found row with a bigger size"
-
+        assert ord(char) <= ord("T"), f"Row characters only span from A to T, {char} is not included"
         row_numerical = (row_numerical * 20) + (ord(char) - ord("A"))
     
     return row_numerical
 
 
 def obtain_tile_position(tile_name):
+    """
+    Returns (col, row)
+    """
 
-    try:
-        tile_info = tile_name.stem
-    except:
-        tile_info = tile_name
+    if not isinstance(tile_name, Path):
+        tile_name = Path(tile_name)
+    
+    tile_info = tile_name.stem
 
     match = re.search(r'([A-Za-z]+)(\d+)', tile_info)
+    
+    if match is None:
+        raise ValueError(f"No row and col found in {tile_info}. Expected to find e.g. AA01")
+    
     row, column = match.groups()
 
     # Convert column to numerical since they are like this: "AA" -> 0, "BA" -> 26
     # and remove 1 from row to be 0-based 
-    return int(column) - 1, convert_row_numerical(row)
+    return int(column) - 1, convert_row_numerical(row) # col, row
 
 
 def get_all_tiles_position_snake(tile_names):
 
-    raw = [obtain_tile_position(name) for name in tile_names]
-
-    rows = sorted({row for _, row in raw})
-    cols = sorted({col for col, _ in raw})
-
-    out = []
-    for row in range(len(rows)):
+    all_tiles = []
+    
+    for name in tile_names:
         
-        if row % 2 == 0:
-            for col in range(len(cols)):
-                out.append((col, row))
-
-        else:
-            for col in range(len(cols) - 1, -1, -1):
-                out.append((col, row))
+        position = obtain_tile_position(name)
         
-    return out
+        assert position not in all_tiles, "Found duplicate tile with same position"
+        
+        all_tiles.append(position)
+    
+    return all_tiles
 
 
 def obtain_direction_to_remove_overlap(tile_pos, last_col):
