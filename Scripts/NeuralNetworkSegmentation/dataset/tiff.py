@@ -8,10 +8,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from monai.data.utils import dense_patch_slices
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from Scripts.utils import get_images_path, read_image
-from Scripts.NeuralNetworkSegmentation.transforms_monai import AugmentationTransformer
+from Scripts.NeuralNetworkSegmentation.augmentation.transforms_monai import AugmentationTransformer
+from Scripts.NeuralNetworkSegmentation.utils import get_logger
+
+logger = get_logger("TiffDataset")
 
 
 @dataclass(frozen=True)
@@ -125,14 +129,38 @@ def read_mask(mask_path: Path):
     return mask.astype(np.long)
 
 
-def _finalize_tensor(array) -> torch.Tensor:
-    """Converts a transform pipeline's output to a plain, contiguous torch.Tensor. Already a
-    tensor when the transform config ends with ToTensord/EnsureTyped; otherwise still plain
-    numpy, using the same from_numpy conversion as before.
+def crop_window(volume_dchw: np.ndarray, window: tuple[slice, ...] | None) -> np.ndarray:
+    """Crops a D,C,H,W (or D,1,H,W) array to a (slice_d, slice_h, slice_w) window, keeping
+    every channel. A no-op when window is None (static mode: the whole file is the patch).
     """
-    if torch.is_tensor(array):
-        return array.contiguous()
-    return torch.from_numpy(np.ascontiguousarray(array))
+    if window is None:
+        return volume_dchw
+    slice_d, slice_h, slice_w = window
+    return volume_dchw[slice_d, :, slice_h, slice_w]
+
+
+def mirror_pad(volume_dchw: np.ndarray, halo_shape: tuple[int, int, int]) -> np.ndarray:
+    """Pads a D,C,H,W (or D,1,H,W) array with a mirror reflection of itself along D,H,W by
+    halo_shape on each side, leaving the channel axis untouched. A no-op when halo_shape is
+    all zeros. Mirrors pytorch-3dunet's datasets.utils.mirror_pad, adapted to this module's
+    D,C,H,W layout (pytorch-3dunet's is C,D,H,W).
+    """
+    if not any(halo_shape):
+        return volume_dchw
+    pad_d, pad_h, pad_w = halo_shape
+    pad_width = ((pad_d, pad_d), (0, 0), (pad_h, pad_h), (pad_w, pad_w))
+    return np.pad(volume_dchw, pad_width, mode="reflect")
+
+
+def _pad_window(window: tuple[slice, slice, slice], halo_shape: tuple[int, int, int]) -> tuple[slice, slice, slice]:
+    """Re-expresses a (slice_d, slice_h, slice_w) window so it indexes the matching region of
+    a volume already mirror_pad-ed by halo_shape: each slice's start is unchanged and its stop
+    is pushed out by 2 * halo, since the padded volume's own origin has shifted by halo.
+    Mirrors pytorch-3dunet's datasets.hdf5._create_padded_indexes.
+    """
+    if not any(halo_shape):
+        return window
+    return tuple(slice(s.start, s.stop + 2 * halo) for s, halo in zip(window, halo_shape, strict=True))
 
 
 @dataclass(frozen=True)
@@ -140,11 +168,11 @@ class _PatchLocation:
     """One entry in a dataset's flat patch index.
 
     sample_idx: index into self.samples identifying which file this patch comes from.
-    window: None in "static" mode (the whole file is the patch, today's only implemented
-        mode). A future "window" mode would populate this with the (D, H, W) slice tuple
-        (as produced by monai.data.utils.dense_patch_slices(..., return_slice=True))
-        identifying where inside the file's volume this patch sits, with multiple
-        _PatchLocation entries sharing one sample_idx for a big tile split into many patches.
+    window: None in "static" mode (the whole file is the patch). In "window" mode, the
+        (slice_d, slice_h, slice_w) tuple (as produced by
+        monai.data.utils.dense_patch_slices(..., return_slice=True)) identifying where inside
+        the file's volume this patch sits -- multiple _PatchLocation entries share one
+        sample_idx when a file is split into several windows.
     """
 
     sample_idx: int
@@ -172,11 +200,23 @@ class AbstractTiffDataset(ConfigDataset):
             every phase (so augmentation only ever touches channels that reach the model) --
             see module docstring for how label-less test (real inference) still gets the full,
             un-sliced raw image back out despite this.
-        patch_mode: "static" (only implemented mode -- one sample is one patch) or "window"
-            (scaffolded, raises NotImplementedError; a future implementation should use
-            monai.data.utils.dense_patch_slices, not pytorch-3dunet's SliceBuilder).
-        patch_config: opaque dict forwarded to a future window-mode index builder (patch_size,
-            scan_interval, ...). Unused in "static" mode.
+        patch_mode: "static" (one sample is one patch, the whole file) or "window" (each
+            sample's (D, H, W) volume is tiled into one or more windows via
+            monai.data.utils.dense_patch_slices).
+        patch_config: forwarded to the "window" index builder -- {"patch_size": (D, H, W),
+            "scan_interval": (D, H, W), "halo_shape": (D, H, W)}. "scan_interval" (the window
+            stride) defaults to "patch_size" (non-overlapping tiling) when omitted. Unused in
+            "static" mode. Windowed inference stitching is handled by
+            monai.inferers.SlidingWindowInferer(mode='gaussian'), see inference.py.
+            "halo_shape" (default (0, 0, 0)) only applies to the raw patch, and only in
+            "window" mode during label-less "test" (real inference): each window is read with
+            halo_shape extra context mirror-padded onto every side (see mirror_pad/
+            _pad_window), same trick as pytorch-3dunet's datasets.hdf5 halo_shape, so the model
+            gets border context that a naive per-window crop would otherwise lack. The window
+            recorded in _PatchLocation stays the exact, non-padded patch position; whatever
+            stitches predictions back together is responsible for stripping the halo back off
+            (pytorch-3dunet's predictor.py does this via remove_padding -- no counterpart is
+            wired up here yet).
 
     Whether labels are read is driven by has_mask and phase: has_mask is required for
     train/val (asserted in __init__, since a silent crash inside read_mask(None) is worse than
@@ -218,7 +258,15 @@ class AbstractTiffDataset(ConfigDataset):
 
         self.patch_mode = patch_mode
         self.patch_config = dict(patch_config) if patch_config else {}
+        self.halo_shape = tuple(self.patch_config.get("halo_shape", (0, 0, 0)))
         self._index: list[_PatchLocation] = self._build_index()
+
+        if self.patch_mode == "window" and phase == "test" and not self.has_mask and not any(self.halo_shape):
+            logger.warning(
+                "Found halo_shape to be (0, 0, 0) for a label-less 'window' mode test group. "
+                "This might lead to checkerboard artifacts in the prediction. Consider using a "
+                "non-zero halo shape, e.g. 'halo_shape: [8, 8, 8]' in patch_config."
+            )
 
         if global_normalization:
             # stats are local to this group's samples, not a whole-corpus scan (same semantics
@@ -248,16 +296,21 @@ class AbstractTiffDataset(ConfigDataset):
             return [_PatchLocation(sample_idx=i) for i in range(len(self.samples))]
 
         if self.patch_mode == "window":
-            raise NotImplementedError(
-                "patch_mode='window' is scaffolded but not implemented. Implement it with "
-                "monai.data.utils.dense_patch_slices(image_size, patch_size, scan_interval, "
-                "return_slice=True) -> list[tuple[slice, ...]] over each sample's (D, H, W) "
-                "shape, turning each returned slice tuple into one "
-                "_PatchLocation(sample_idx=i, window=slices) per file. Do NOT reuse "
-                "pytorch-3dunet's SliceBuilder. Windowed inference stitching is already "
-                "handled by monai.inferers.SlidingWindowInferer(mode='gaussian') (see "
-                "inference.py) and needs no counterpart here."
+            patch_size = self.patch_config.get("patch_size")
+            assert patch_size is not None, (
+                "patch_config['patch_size'] is required for patch_mode='window'."
             )
+            scan_interval = self.patch_config.get("scan_interval", patch_size)
+
+            index: list[_PatchLocation] = []
+            for sample_idx, sample in enumerate(self.samples):
+                raw_dchw = read_input(sample.input_path)  # D,C,H,W
+                image_size = (raw_dchw.shape[0], raw_dchw.shape[2], raw_dchw.shape[3])  # D,H,W
+                windows = dense_patch_slices(image_size, patch_size, scan_interval)
+                index.extend(
+                    _PatchLocation(sample_idx=sample_idx, window=window) for window in windows
+                )
+            return index
 
         raise ValueError(f"Unknown patch_mode: {self.patch_mode!r}. Choose 'static' or 'window'.")
 
@@ -310,9 +363,7 @@ class AbstractTiffDataset(ConfigDataset):
             raw_cdhw = transformed["volume"]
             label_cdhw = transformed["mask3d"]
 
-        raw_tensor = _finalize_tensor(raw_cdhw)
-        label_tensor = _finalize_tensor(label_cdhw)
-        return raw_tensor, label_tensor
+        return raw_cdhw, label_cdhw
 
     def _getitem_inference(self, location: _PatchLocation, raw_dchw: np.ndarray):
         # raw_input ("volume") and raw_full ("full_raw") are two independent dict-transform
@@ -333,11 +384,8 @@ class AbstractTiffDataset(ConfigDataset):
             raw_input_cdhw = transformed["volume"]
             raw_full_cdhw = transformed["full_raw"]
 
-        raw_input_tensor = _finalize_tensor(raw_input_cdhw)
-        raw_full_tensor = _finalize_tensor(raw_full_cdhw)
-
         file_name = self.samples[location.sample_idx].file_name
-        return raw_input_tensor, raw_full_tensor, file_name
+        return raw_input_cdhw, raw_full_cdhw, file_name
 
     @staticmethod
     def _prepare_raw(raw_dchw: np.ndarray) -> np.ndarray:
@@ -405,6 +453,11 @@ class AbstractTiffDataset(ConfigDataset):
             for samples in samples_by_patient.values():
                 for sample in samples:
                     yield sample.file_name, [sample]
+        elif group_by == "all":
+            total_samples = list()
+            for samples in samples_by_patient.values():
+                total_samples.extend(samples)
+            yield "all", total_samples 
         else:
             raise ValueError(f"Unknown group_by: {group_by!r}. Choose 'patient' or 'image'.")
 
@@ -413,10 +466,10 @@ class StandardTiffDataset(AbstractTiffDataset):
     """Loads each file into memory on first access, cached for the dataset's lifetime. Fast
     but memory heavy.
 
-    The cache is keyed by sample_idx (not by flat patch index): once window mode exists,
-    several _PatchLocation entries can share one sample_idx, and keying by sample_idx means the
-    underlying file is only ever read/cached once no matter how many windows are carved out of
-    it. Today (patch_mode="static") sample_idx and idx coincide 1:1.
+    The cache is keyed by sample_idx (not by flat patch index): in "window" mode, several
+    _PatchLocation entries share one sample_idx, and keying by sample_idx means the underlying
+    file is only ever read/cached once no matter how many windows are carved out of it. In
+    "static" mode sample_idx and idx coincide 1:1.
     """
 
     def __init__(self, *args, **kwargs):
@@ -428,15 +481,13 @@ class StandardTiffDataset(AbstractTiffDataset):
         sample_idx = location.sample_idx
         if sample_idx not in self._raw_cache:
             self._raw_cache[sample_idx] = read_input(self.samples[sample_idx].input_path)
-        # location.window is always None today; a future window mode would crop the cached
-        # volume by location.window here before returning.
-        return self._raw_cache[sample_idx]
+        return crop_window(self._raw_cache[sample_idx], location.window)
 
     def get_label_patch(self, location: _PatchLocation) -> np.ndarray:
         sample_idx = location.sample_idx
         if sample_idx not in self._label_cache:
             self._label_cache[sample_idx] = read_mask(self.samples[sample_idx].mask_path)
-        return self._label_cache[sample_idx]
+        return crop_window(self._label_cache[sample_idx], location.window)
 
     def is_lazy(self) -> bool:
         return False
@@ -446,10 +497,12 @@ class LazyTiffDataset(AbstractTiffDataset):
     """Reads each file from disk on every access. Slower, but has a low memory footprint."""
 
     def get_raw_patch(self, location: _PatchLocation) -> np.ndarray:
-        return read_input(self.samples[location.sample_idx].input_path)
+        raw = read_input(self.samples[location.sample_idx].input_path)
+        return crop_window(raw, location.window)
 
     def get_label_patch(self, location: _PatchLocation) -> np.ndarray:
-        return read_mask(self.samples[location.sample_idx].mask_path)
+        label = read_mask(self.samples[location.sample_idx].mask_path)
+        return crop_window(label, location.window)
 
     def is_lazy(self) -> bool:
         return True
