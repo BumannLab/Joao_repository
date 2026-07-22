@@ -1,3 +1,4 @@
+import operator as op
 from itertools import repeat
 from multiprocessing import Pool
 from dataclasses import dataclass
@@ -20,14 +21,18 @@ ODIRNAME = "/data/joao/Materials/Joao_repository/Results/B2022.10246/SYBRGold_CD
 
 CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
 CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=800"
+MEAN_CLUSTER_THRESHOLD_CONDITIONS = "DAPI<=250,SYBRGold>=1000"
+
 CLUSTER_SIZE_THRESHOLD = 5
 
-CREATE_TILE_WITH_MASK = False
-DO_MAX_PROJECTION_MASK = False
+SAVE_TILE_WITH_MASK = False
+MIP_ON_SAVE = False
 
 IMAGE_OVERLAP = 5
 
 NUM_PROCESSERS = 15
+
+COMPARISON_OPERATORS = {">": op.gt, ">=": op.ge, "<": op.lt, "<=": op.le}
 
 
 @dataclass
@@ -78,43 +83,35 @@ class Cluster_3D:
         # Similar behaviour to round python function
         mean_intensities = np.where(frac > 0.5, np.ceil(mean_intensities), np.round(mean_intensities, 1))
 
-        self.Mean_Intensities = mean_intensities.astype(str)
+        self.Mean_Intensities = mean_intensities
 
 
-def build_out_file_sufix(threshold_conditions):
+def build_out_file_sufix(threshold_conditions, prefix = None):
 
     if ">=" in threshold_conditions:
-        threshold_conditions = threshold_conditions.replace(">=", "_greater_equal_")
+        threshold_conditions = threshold_conditions.replace(">=", "_get_")
     if "<=" in threshold_conditions:
-        threshold_conditions = threshold_conditions.replace("<=", "_less_equal_")
+        threshold_conditions = threshold_conditions.replace("<=", "_let_")
     if ">" in threshold_conditions:
-        threshold_conditions = threshold_conditions.replace(">", "_greater_")
+        threshold_conditions = threshold_conditions.replace(">", "_gt_")
     if "<" in threshold_conditions:
-        threshold_conditions = threshold_conditions.replace("<", "_less_")
+        threshold_conditions = threshold_conditions.replace("<", "_lt_")
 
-    threshold_conditions = threshold_conditions.replace(",", "_")
-
+    if prefix is not None:
+        threshold_conditions = prefix + threshold_conditions.replace(",", prefix)
+    
     return threshold_conditions
 
 
 def voxel_channel_intensity_threshold(image, channel, operator, threshold):
-    
-    if operator == ">":
-        voxel_coi_intensity_mask = image[:, channel] > threshold
-    elif operator == ">=":
-        voxel_coi_intensity_mask = image[:, channel] >= threshold
-    elif operator == "<":
-        voxel_coi_intensity_mask = image[:, channel] < threshold
-    elif operator == "<=":
-        voxel_coi_intensity_mask = image[:, channel] <= threshold
 
-    return voxel_coi_intensity_mask
+    return COMPARISON_OPERATORS[operator](image[:, channel], threshold)
 
 
-def multi_channel_threshold_mask(image, thresholds):
+def multi_channel_threshold_mask(image, voxel_channel_thresholds):
     image_masks = []
 
-    for channel_threshold in thresholds:
+    for channel_threshold in voxel_channel_thresholds:
 
         channel, operator, threshold = channel_threshold
 
@@ -129,11 +126,27 @@ def multi_channel_threshold_mask(image, thresholds):
     return final_mask
 
 
-def filter_size_clusters(all_clusters_props, cluster_size_threshold: int = 5):
+def filter_mean_threshold_clusters(cluster_objects, mean_cluster_thresholds):
+
+    if not mean_cluster_thresholds:
+        return cluster_objects
+
     filtered_clusters = [
         cluster
-        for cluster in all_clusters_props
-        if cluster.area > cluster_size_threshold
+        for cluster in cluster_objects
+        if all(
+            COMPARISON_OPERATORS[operator](cluster.Mean_Intensities[channel], threshold)
+            for channel, operator, threshold in mean_cluster_thresholds
+        )
+    ]
+    return filtered_clusters
+
+
+def filter_size_clusters(cluster_objects, cluster_size_threshold: int = 5):
+    filtered_clusters = [
+        cluster
+        for cluster in cluster_objects
+        if cluster.Volume > cluster_size_threshold
     ]
     return filtered_clusters
 
@@ -166,7 +179,7 @@ def write_matrix_tiff(name, image, threshold_mask, odirname, do_max_proj):
 
     odirname = Path(odirname)
     odirname.mkdir(parents=True, exist_ok=True)
-
+    
     tiff.imwrite(
         f"{odirname}/{name}.tif",
         image.astype(np.uint16),
@@ -187,13 +200,39 @@ def build_file_report(cluster_objects):
                 str(cluster.X_centroid),
                 str(cluster.Y_centroid),
                 str(cluster.Z_centroid),
-                *cluster.Mean_Intensities,
+                *(str(intensity) for intensity in cluster.Mean_Intensities),
             ]
         )
 
         file_content.append(content)
 
     return "\n".join(file_content) + "\n"
+
+
+def build_cluster_objects(
+    all_clusters_props, img_name, image, pixels_to_remove_w, pixels_to_remove_h, directions_remove_overlap
+):
+    cluster_objects = list()
+
+    for cluster in all_clusters_props:
+
+        cluster_obj = Cluster_3D(
+            img_name,
+            cluster.area,
+            round(cluster.centroid[-1], 1),
+            round(cluster.centroid[-2], 1),
+            round(cluster.centroid[-3], 1),
+            cluster.coords
+        )
+
+        cluster_obj.correct_positions(
+            pixels_to_remove_w, pixels_to_remove_h, directions_remove_overlap
+        )
+
+        cluster_obj.cluster_mean_intensities(image)
+        cluster_objects.append(cluster_obj)
+
+    return cluster_objects
 
 
 def build_voxel_clusters(args):
@@ -204,20 +243,24 @@ def build_voxel_clusters(args):
         directions_remove_overlap,
         image_overlap,
         channel_threshold_conditions,
+        cluster_mean_thresholds_conditions,
         cluster_size_threshold,
-        create_tile_with_mask,
-        do_max_proj_mask,
+        save_tile_with_mask,
+        mip_on_save,
         odirname,
     ) = args
 
     img_name = image_path.stem
     
-    image = read_image(image_path)[:, :4]
+    image = read_image(image_path)
 
     if image is None:
         print("As a result this image will be classified as having no clusters.")
         no_intensity = "\t".join("-1" for _ in range(num_channels))
         return f"{img_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
+
+    if image.ndim == 3: #CHW -> DCHW
+        image = image[np.newaxis]
 
     img_height, img_width = image.shape[-2:]
 
@@ -240,58 +283,43 @@ def build_voxel_clusters(args):
 
     all_clusters_props = regionprops(mask_label_no_overlap)
 
-    filtered_clusters_props = filter_size_clusters(
-        all_clusters_props, cluster_size_threshold
+    cluster_objects = build_cluster_objects(
+        all_clusters_props, img_name, image, pixels_to_remove_w, pixels_to_remove_h, directions_remove_overlap
     )
 
-    if not filtered_clusters_props:
+    cluster_objects = filter_mean_threshold_clusters(
+        cluster_objects, cluster_mean_thresholds_conditions
+    )
+
+    cluster_objects = filter_size_clusters(cluster_objects, cluster_size_threshold)
+
+    if not cluster_objects:
         no_intensity = "\t".join("-1" for _ in range(num_channels))
         return f"{img_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
 
-    cluster_objects = list()
-
-    for cluster in filtered_clusters_props:
-
-        cluster_obj = Cluster_3D(
-            img_name,
-            cluster.area,
-            round(cluster.centroid[-1], 1),
-            round(cluster.centroid[-2], 1),
-            round(cluster.centroid[-3], 1),
-            cluster.coords
-        )
-        
-        cluster_obj.correct_positions(
-            pixels_to_remove_w, pixels_to_remove_h, directions_remove_overlap
-        )
-
-        cluster_obj.cluster_mean_intensities(image)
-        cluster_objects.append(cluster_obj)
-
     voxel_cluster_info = build_file_report(cluster_objects)
     
-    if create_tile_with_mask:
-        write_matrix_tiff(img_name, image, mask_label, odirname, do_max_proj_mask) # PUT INPUT TO DO THIS
+    if save_tile_with_mask:
+        write_matrix_tiff(img_name, image, mask_label, odirname, mip_on_save)
 
     return voxel_cluster_info
 
 
 def main(
     image_dir,
-    channel_markers,
     channel_threshold_conditions,
-    cluster_size_threshold,
-    create_tile_with_mask,
-    do_max_proj_mask,
     image_overlap,
     odirname,
+    channel_markers = None,
+    save_tile_with_mask = True,
+    mip_on_save = False,
+    mean_cluster_threshold_conditions = None,
+    cluster_size_threshold = None,
     num_processers: int = 1,
 ):
 
     odirname = Path(odirname)
     odirname.mkdir(parents=True, exist_ok=True)
-
-    channel_markers = channel_markers.split(",")
 
     images_path = get_images_path(image_dir, ".nd2", ".tif", ".tiff")
 
@@ -299,13 +327,28 @@ def main(
         images_path
     )
 
+    channel_markers = channel_markers.split(",")
+
     sliced_channel_thresholds = slice_channel_threshold(
         channel_threshold_conditions, channel_markers
     )
 
-    renamed_threshold_conditions = build_out_file_sufix(channel_threshold_conditions)
+    renamed_channel_threshold_conditions = build_out_file_sufix(channel_threshold_conditions, "_")
 
-    voxel_cluster_report_fname = f"{odirname}/voxel_clusters_size_over{cluster_size_threshold}_{renamed_threshold_conditions}.tsv"
+    voxel_cluster_report_fname = f"{odirname}/voxel_clusters_size_over{cluster_size_threshold}{renamed_channel_threshold_conditions}"
+
+    sliced_cluster_mean_thresholds = []
+
+    if mean_cluster_threshold_conditions:
+        sliced_cluster_mean_thresholds = slice_channel_threshold(
+                mean_cluster_threshold_conditions, channel_markers
+        )
+
+        renamed_mean_cluster_threshold_condition = build_out_file_sufix(mean_cluster_threshold_conditions, "_mean_")
+
+        voxel_cluster_report_fname += renamed_mean_cluster_threshold_condition
+
+    voxel_cluster_report_fname += ".tsv"
 
     with open(voxel_cluster_report_fname, "w") as voxel_cluster_out:
         channel_cols = "\t".join(
@@ -322,9 +365,10 @@ def main(
                 all_directions_remove_overlap,
                 repeat(image_overlap),
                 repeat(sliced_channel_thresholds),
+                repeat(sliced_cluster_mean_thresholds),
                 repeat(cluster_size_threshold),
-                repeat(create_tile_with_mask),
-                repeat(do_max_proj_mask),
+                repeat(save_tile_with_mask),
+                repeat(mip_on_save),
                 repeat(odirname),
             )
 
@@ -339,13 +383,14 @@ def main(
 if __name__ == "__main__":
 
     main(
-        IMAGE_DIR,
-        CHANNEL_MARKERS,
-        CHANNEL_THRESHOLD_CONDITIONS,
-        CLUSTER_SIZE_THRESHOLD,
-        CREATE_TILE_WITH_MASK,
-        DO_MAX_PROJECTION_MASK,
-        IMAGE_OVERLAP,
-        ODIRNAME,
-        NUM_PROCESSERS,
+        image_dir=IMAGE_DIR,
+        channel_markers=CHANNEL_MARKERS,
+        channel_threshold_conditions=CHANNEL_THRESHOLD_CONDITIONS,
+        mean_cluster_threshold_conditions = MEAN_CLUSTER_THRESHOLD_CONDITIONS,
+        cluster_size_threshold = CLUSTER_SIZE_THRESHOLD,
+        save_tile_with_mask = SAVE_TILE_WITH_MASK,
+        mip_on_save = MIP_ON_SAVE,
+        image_overlap = IMAGE_OVERLAP,
+        odirname = ODIRNAME,
+        num_processers = NUM_PROCESSERS,
     )
