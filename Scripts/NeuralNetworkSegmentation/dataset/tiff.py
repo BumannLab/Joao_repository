@@ -11,7 +11,7 @@ from monai.data.utils import dense_patch_slices
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from Scripts.utils import get_images_path, read_tiff_image
-from Scripts.NeuralNetworkSegmentation.augmentation.transforms_monai import AugmentationTransformer
+from NeuralNetworkSegmentation.augmentation.transforms import AugmentationTransformer
 from Scripts.NeuralNetworkSegmentation.utils import get_logger
 from Scripts.NeuralNetworkSegmentation.dataset.utils import (
     ConfigDataset,
@@ -32,6 +32,7 @@ def crop_window(volume_dchw: np.ndarray, window: tuple[slice, ...] | None) -> np
     slice_d, slice_h, slice_w = window
     return volume_dchw[:, slice_d, slice_h, slice_w]
 
+
 @dataclass(frozen=True)
 class PatchLocation:
     """One entry in a dataset's flat patch index.
@@ -43,6 +44,7 @@ class PatchLocation:
 
     sample_idx: int
     window: tuple[slice, ...] | None = None
+
 
 class AbstractTiffDataset(ConfigDataset):
     """torch Dataset over tiff files, iterating patch by patch. Abstract base for the standard
@@ -161,10 +163,9 @@ class AbstractTiffDataset(ConfigDataset):
         if self.phase == "test" and not self.has_mask:
 
             if self.transform is not None:
-                # TODO: CHANGE VOLUME TO IMAGE, FULL_RAW TO FULL_IMAGE Change it in transforms as well
-                transformed = self.transform(volume=raw_input, full_raw=full_raw) 
-                raw_input = transformed["volume"].to(torch.float32)
-                full_raw = transformed["full_raw"]
+                transformed = self.transform({"img":raw_input, "full_img":full_raw})
+                raw_input = transformed["img"].to(torch.float32)
+                full_raw = transformed["full_img"]
 
             file_name = self.samples[location.sample_idx].file_name
             return raw_input, full_raw, file_name
@@ -173,10 +174,9 @@ class AbstractTiffDataset(ConfigDataset):
             label = self.get_label_patch(location)
 
             if self.transform is not None:
-                # TODO: CHANGE VOLUME TO IMAGE, MASK3D TO MASK Change it in transforms as well
-                transformed = self.transform(volume=raw_input, mask3d=label)
-                raw_input = transformed["volume"].to(torch.float32)
-                label = transformed["mask3d"].to(torch.long)
+                transformed = self.transform({"img":raw_input, "mask":label})
+                raw_input = transformed["img"].to(torch.float32)
+                label = transformed["mask"].to(torch.long)
 
             # return the transformed raw and label patches
             return raw_input, label
