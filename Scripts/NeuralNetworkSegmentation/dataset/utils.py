@@ -4,13 +4,11 @@ from collections import defaultdict
 import collections
 from typing import Any
 
-
 import numpy as np
 import torch
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from Scripts.utils import get_images_path, read_tiff_image
-from Scripts.NeuralNetworkSegmentation.dataset.tiff import StandardTiffDataset, LazyTiffDataset 
 from Scripts.NeuralNetworkSegmentation.utils import get_logger
 
 logger = get_logger("Dataset")
@@ -176,6 +174,10 @@ class ConfigDataset(Dataset):
 
 
 def _loader_classes(class_name):
+    # Imported here, not at module level, to avoid a circular import: tiff.py imports
+    # from this module too (read_input, read_mask, ConfigDataset, ...).
+    from Scripts.NeuralNetworkSegmentation.dataset.tiff import StandardTiffDataset, LazyTiffDataset
+
     if class_name == "standard":
         return StandardTiffDataset
     elif class_name == "lazy":
