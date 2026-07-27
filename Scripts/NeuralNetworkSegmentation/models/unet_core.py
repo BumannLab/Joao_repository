@@ -63,7 +63,6 @@ class ConvBlock(nn.Module):
                 output_padding=None,
             ),
         )
-        print(bias)
 
     def forward(self, x):
         x = self.convblock(x)
