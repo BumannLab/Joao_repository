@@ -87,7 +87,7 @@ class AbstractTiffDataset(ConfigDataset):
 
         if global_normalization:
             logger.info("Calculating mean and std of the raw data...")
-            raw_samples = [self._select_channels(read_input(sample.input_path).astype(np.float64) / 65535) for sample in self.samples]
+            raw_samples = [self._select_channels(read_input(sample.input_path).astype(np.float64)) for sample in self.samples]
             stats = calculate_stats(raw_samples)
         else:
             stats = calculate_stats(None, True)
