@@ -2,23 +2,34 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
+import time 
+
 from Scripts.NeuralNetworkSegmentation.optimizer import create_optimizer, create_lr_scheduler
 from Scripts.NeuralNetworkSegmentation.models.unet import get_model
 from Scripts.NeuralNetworkSegmentation.loss import get_loss
 from Scripts.NeuralNetworkSegmentation.config import load_config_yaml, save_config_yaml
-from Scripts.NeuralNetworkSegmentation.dataset.data import get_train_loaders
+from Scripts.NeuralNetworkSegmentation.dataset.utils import get_train_loaders
 from Scripts.NeuralNetworkSegmentation.train import ModelTrainer
 from Scripts.NeuralNetworkSegmentation.metrics import get_eval_criterion
+from Scripts.NeuralNetworkSegmentation.utils import seed_everything
 
-
-CONFIG_PATH = "Results/MycobacteriaTuberculosisSegmentation/TestNewScript/previous2dpipeline.yml"
+CONFIG_PATH = "/data/joao/Materials/Joao_repository/Scripts/NeuralNetworkSegmentation/configurations/baseconfig2d_finalversion.yml"
 
 def main(
         config_path,
 ):  
-    # TODO: Build tests for all of this
     config = load_config_yaml(config_path)
-    
+
+    if config["loaders"].get("seed") is None:
+        seed = int(time.time())
+        config["loaders"]["seed"] = seed
+    seed = config["loaders"]["seed"]
+
+    save_dir = config["trainer"]["checkpoint_dir"]
+    save_config_yaml(save_dir, config)
+
+    seed_everything(seed)
+
     # Create the model
     model = get_model(config["model"])
 
@@ -40,7 +51,7 @@ def main(
     eval_criterion = get_eval_criterion(config["eval_criterion"])
 
     # Create data loaders
-    loaders = get_train_loaders(config["loaders"])
+    loaders = get_train_loaders(config)
 
     train_config = config["trainer"]
     resume = train_config.pop("resume", None)
