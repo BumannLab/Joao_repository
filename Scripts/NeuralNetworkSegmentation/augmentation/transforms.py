@@ -7,6 +7,47 @@ from monai.utils import convert_to_numpy
 from Scripts.NeuralNetworkSegmentation.utils import get_class
 
 
+class OneHotd(MapTransform):
+    """Turns an integer label mask into a one-hot encoded array along the channel axis. 
+    Always applied, there is no probability.
+
+    Expects a channel-first mask, (1, D, H, W); output is (num_channels, D, H, W).
+
+    Args:
+        keys (KeysCollection): keys to one-hot encode. Default: ("mask",).
+        num_channels (int): size of the output channel dimension. If None, inferred as
+            max(mask) + 1. If given, must be >= the number of classes actually present.
+            Default: None.
+        allow_missing_keys (bool): don't raise if a key is missing. Default: True.
+    """
+
+    def __init__(self, keys=("mask",), num_channels=None, allow_missing_keys=True):
+        super().__init__(keys, allow_missing_keys)
+        self.num_channels = num_channels
+
+    def __call__(self, data):
+
+        d = dict(data)
+
+        for key in self.key_iterator(d):
+            mask = d[key]
+
+            n_channels = self.num_channels
+            if n_channels is None:
+                n_channels = int(mask.max()) + 1
+
+            assert n_channels >= int(mask.max()) + 1, (
+                f"n_channels={n_channels} is smaller or equal than the number of classes"
+                f"found in mask ({int(mask.max()) + 1})"
+            )
+
+            one_hot = np.eye(n_channels, dtype=np.float32)[mask[0].astype(np.int64)]  # D, H, W, n_channels
+
+            d[key] = np.transpose(one_hot, (3, 0, 1, 2))  # n_channels, D, H, W
+
+        return d
+    
+
 class SliceReplication3DFilterd(RandomizableTransform, MapTransform):
     """Increases depth resolution by repeating slices along the depth axis, 
     then smooths the result with a 3D filter. "mask" is always smoothed with a median filter
