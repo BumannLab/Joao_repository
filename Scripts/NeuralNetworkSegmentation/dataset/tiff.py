@@ -178,6 +178,12 @@ class AbstractTiffDataset(ConfigDataset):
                 raw_input = transformed["img"].to(torch.float32)
                 label = transformed["mask"].to(torch.long)
 
+            if self.phase == "test":
+                # In test phase with mask return the file_name so we can track
+                # the images saved to the corresponding ones in the test set
+                file_name = self.samples[location.sample_idx].file_name
+                return raw_input, label, file_name
+
             # return the transformed raw and label patches
             return raw_input, label
 

@@ -174,8 +174,10 @@ def read_image(path, inc_metadata=False, shape=None):
 
 
 def slice_channel_threshold(threshold_conditions, channel_markers = None):
-
     channel_threshold_conditions = []
+
+    if not threshold_conditions:
+        return channel_threshold_conditions
     
     for channel_threshold in threshold_conditions.split(","):
 
@@ -191,7 +193,6 @@ def slice_channel_threshold(threshold_conditions, channel_markers = None):
         channel_threshold_conditions.append(conditions)
 
     return channel_threshold_conditions
-
 
 def create_luts(rgb_values):
     

@@ -55,7 +55,6 @@ class ModelTrainer:
         eval_criterion,
         loaders,
         checkpoint_dir = "", # Maybe remove the "" and put None or make it essential to have
-        channels_to_load = None,
         max_num_epochs = 1000,
         num_epochs = 0,
         early_stopping = True,
@@ -75,7 +74,6 @@ class ModelTrainer:
         self.loss_criterion = loss_criterion
         self.eval_criterion = eval_criterion
         self.loaders = loaders
-        self.channels_to_load = channels_to_load
 
         self.checkpoint_dir = checkpoint_dir
         
@@ -304,9 +302,6 @@ class ModelTrainer:
         Handles 2d and 3d inputs if the model is 2d it will remove the singleton z-dimension
         """
 
-        if self.channels_to_load is not None:
-            input = input[:, self.channels_to_load]
-
         if is_model_2d(self.model):
 
             # remove the singleton z-dimension from the input
@@ -368,11 +363,6 @@ class ModelTrainer:
         self.tensorboard_formatter. Returns the next free preview index.
         """
         for c_input, c_target, c_pred in zip(input, target, prediction):
-
-            if c_pred.shape[0] > 1:
-                c_pred = torch.argmax(c_pred, dim=0, keepdim=True)
-            else:
-                c_pred = (c_pred > 0.5).float()
 
             c_input, c_target, c_pred = convert_to_numpy(c_input, c_target, c_pred)
 

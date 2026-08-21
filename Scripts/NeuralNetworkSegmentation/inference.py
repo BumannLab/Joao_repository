@@ -64,7 +64,7 @@ class Inferer:
         
         self.model = model
         self.loader = loader
-        self.halo_shape = halo_shape # (left, right, top, bottom, front, back) # DO NOT USE IT NOW SINCE THIS DOES NOT PAD INDIVIDUAL ROI BUT THE WHOLE IMAGE
+        self.halo_shape = halo_shape 
         self.inferer = SlidingWindowInferer(window_shape, batch_size, overlap, mode, sigma_scale, device = device)
         self.raw_full_transform = AugmentationTransformer(full_raw_transform_config, seed, {})._create_transform()
 

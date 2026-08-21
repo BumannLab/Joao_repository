@@ -157,9 +157,3 @@ class TestCutOverlap:
         result = cut_overlap(image, 1, 1, ["top", "left"])
 
         np.testing.assert_array_equal(result, image[:, 1:, 1:])
-
-
-# Bug report
-# `obtain_tile_position` does not validate that the tile name matches the expected
-# pattern before calling `match.groups()`, so malformed names will raise an
-# `AttributeError` instead of a clearer exception.

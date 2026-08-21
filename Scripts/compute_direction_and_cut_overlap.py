@@ -23,7 +23,9 @@ def obtain_tile_position(tile_name):
     
     tile_info = tile_name.stem
 
-    match = re.search(r'([A-Za-z]+)(\d+)', tile_info)
+    tile_pos = tile_info.split(".")[0].split("_")[-1]
+
+    match = re.search(r'([A-Za-z]+)(\d+)', tile_pos)
     
     if match is None:
         raise ValueError(f"No row and col found in {tile_info}. Expected to find e.g. AA01")

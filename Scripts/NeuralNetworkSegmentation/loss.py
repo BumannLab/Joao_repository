@@ -61,7 +61,8 @@ def get_loss(loss_config, weights = None):
         )
     
     elif loss_name == "DiceFocalLoss":
-        smooth = loss_config.get("smooth", 1)
+        smooth_dr = loss_config.get("smooth_dr", 0.00001)
+        smooth_nr = loss_config.get("smooth_nr", 0.00001)
         gamma = loss_config.get("gamma", 1)
         lambda_dice = loss_config.get("lambda_dice", 0.5)
         lambda_focal = loss_config.get("lambda_focal", 0.5)
@@ -70,8 +71,8 @@ def get_loss(loss_config, weights = None):
             softmax=softmax,
             include_background=incude_bg,
             gamma=gamma,
-            smooth_dr=smooth,
-            smooth_nr=smooth,
+            smooth_dr=smooth_dr,
+            smooth_nr=smooth_nr,
             lambda_dice=lambda_dice,
             lambda_focal=lambda_focal,
         )

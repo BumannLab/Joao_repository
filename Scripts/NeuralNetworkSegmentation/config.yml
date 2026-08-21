@@ -34,13 +34,14 @@ eval_criterion:
 
 trainer:
   checkpoint_dir: "Results/NeuralNetworkSegmentationModels"
-  channels_to_load: [0]
-  max_num_epochs: 200
+  max_num_epochs: 5
   log_after_epochs: 1
   max_val_images: 100
   
 loaders:
   dataset: standard
+  
+  channels_to_load: [0]
 
   batch_size: 1
   num_workers: 1
@@ -48,7 +49,7 @@ loaders:
   seed: 47
 
   train:
-    raw_path:  # Path to the input images used for training.
+    raw_path: Test_augmentations/MockDataset/train/input # Path to the input images used for training.
     label_path: Test_augmentations/MockDataset/train/label # Path to the segmentation masks matching the input images.
 
     generate_data: False # Whether to create a generated dataset before training.
