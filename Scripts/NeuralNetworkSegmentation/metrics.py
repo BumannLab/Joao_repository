@@ -10,9 +10,7 @@ from skimage import measure
 from monai.utils import MetricReduction, LossReduction 
 from monai.networks.utils import one_hot
 
-
 from Scripts.NeuralNetworkSegmentation.utils import convert_to_numpy
-
 
 class HardDice(DiceMetric):
     def __init__(
@@ -39,14 +37,11 @@ class HardDice(DiceMetric):
         y = y.float()
 
         return super().__call__(y_pred, y)
-    
 
 class SoftDice(CumulativeIterationMetric):
     def __init__(
         self,
-        mode="sigmoid",
         include_background=True,
-        to_onehot_y=None,
         squared_pred=False,
         jaccard=False,
         smooth_nr=1e-5,
@@ -56,17 +51,9 @@ class SoftDice(CumulativeIterationMetric):
     ):
         super().__init__()
 
-        if mode not in ("sigmoid", "softmax"):
-            raise ValueError("mode must be 'sigmoid' or 'softmax'")
-
-        # softmax mode expects class-index targets → convert to one-hot by default
-        # sigmoid mode expects per-channel binary targets → no conversion needed
-        if to_onehot_y is None:
-            to_onehot_y = mode == "softmax"
-
         self.dice_loss = DiceLoss(
             include_background=include_background,
-            to_onehot_y=to_onehot_y,
+            to_onehot_y=False,
             sigmoid=False,   # input is already post-activation probabilities
             softmax=False,   # input is already post-activation probabilities
             squared_pred=squared_pred,

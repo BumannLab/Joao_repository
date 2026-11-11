@@ -7,7 +7,6 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 from Scripts.NeuralNetworkSegmentation.models.unet import is_model_2d
-from Scripts.NeuralNetworkSegmentation.metrics import compute_confusion_matrix
 from Scripts.NeuralNetworkSegmentation.utils import save_checkpoint, load_checkpoint, get_logger, convert_to_numpy
 from Scripts.NeuralNetworkSegmentation.visualization import TensorboardFormatter
 
@@ -20,7 +19,8 @@ class ModelTrainer:
 
     Runs one training and one validation pass per epoch. Scalar metrics (loss, eval score,
     learning rate) are logged to TensorBoard every epoch. Validation image results are logged
-    only every `log_after_epochs` epochs, since validation itself always runs every epoch but
+    only every `log_after_epochs` epochs, and training image results only every
+    `log_train_images_after_epochs` epochs, since both passes always run every epoch but
     writing image summaries that often would be wasteful.
 
     Args:
@@ -39,7 +39,9 @@ class ModelTrainer:
         eval_score_higher_is_better: If True higher eval scores are considered better. Default: True.
         log_after_epochs: Number of epochs between validation image logging to tensorboard. Validation
             itself still runs every epoch; only the image summaries are skipped in between. Default: 100.
-        max_val_images: Maximum number of images to log during validation. Default: 100. 
+        log_train_images_after_epochs: Number of epochs between training image logging to tensorboard.
+            Training itself still runs every epoch; only the image summaries are skipped in between. Default: 10.
+        max_val_images: Maximum number of images to log during validation. Default: 100.
         skip_train_validation: If True eval_criterion is not evaluated on the training set (used when
             evaluation is expensive). Default: False.
         resume: Path to the checkpoint to be resumed. Default: None.
@@ -64,6 +66,7 @@ class ModelTrainer:
         resume = False,
         pre_trained = False,
         log_after_epochs = 50,
+        log_train_images_after_epochs = 10,
         max_val_images = 100,
         device = None
     ):
@@ -81,6 +84,7 @@ class ModelTrainer:
         self.num_epochs = num_epochs
 
         self.log_after_epochs = log_after_epochs
+        self.log_train_images_after_epochs = log_train_images_after_epochs
         self.max_val_images = max_val_images
 
         self.skip_train_validation = skip_train_validation
@@ -113,6 +117,15 @@ class ModelTrainer:
             self.best_eval_score = state["best_eval_score"]
             self.num_epochs = state["num_epochs"]
             self.checkpoint_dir = os.path.split(resume)[0]
+
+            # The scheduler's own plateau-tracking best is never checkpointed (only
+            # model/optimizer state and best_eval_score are), so a fresh ReduceLROnPlateau
+            # always starts at -inf and would silently judge future epochs against
+            # whatever they happen to score first post-resume instead of the true
+            # historical best. Seed it from the restored best_eval_score so num_bad_epochs
+            # only resets on a genuine improvement over that real best.
+            if isinstance(self.scheduler, ReduceLROnPlateau):
+                self.scheduler.best = self.best_eval_score
         
         elif pre_trained is not None:
 
@@ -129,6 +142,16 @@ class ModelTrainer:
         self.eval_criterion.reset()
         self.model.train()
 
+        log_images = self.num_epochs % self.log_train_images_after_epochs == 0
+
+        if log_images:
+            rs = np.random.RandomState(42)
+            if len(self.loaders["train"]) <= self.max_val_images:
+                indices = set(range(len(self.loaders["train"])))
+            else:
+                indices = set(rs.choice(len(self.loaders["train"]), size=self.max_val_images, replace=False))
+            preview_idx = 0
+
         for batch_idx, batch in enumerate(self.loaders["train"]):
 
             input, target = batch # BC[D]HW , B1[D]HW ; 1 can be equal to C if OneHot Augmentation is used
@@ -140,13 +163,18 @@ class ModelTrainer:
 
             self.optimizer.zero_grad()
             loss.backward()
+            # Caps the gradient norm to prevent rare large-gradient batches (e.g. near-empty
+            # Dice denominators) from taking an oversized step that saturates the output sigmoid.
+            # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            self.optimizer.step()
 
             # NOTE: Optional log Gradients
             # if batch_idx == 0 and self.num_epochs % self.log_after_epochs == 0:
             #     self._log_params()
 
-            self.optimizer.step()
-            
+            if log_images and batch_idx in indices:
+                preview_idx = self._log_images(input, target, output, preview_idx, phase="train")
+
             epoch_loss += loss.item()
 
         epoch_loss = epoch_loss / len(self.loaders["train"])
@@ -198,51 +226,9 @@ class ModelTrainer:
             epoch_loss = epoch_loss / len(self.loaders["val"])
             epoch_eval_score = self.eval_criterion.aggregate(reduction="mean").item()
 
-            self.writer.add_scalar('Loss/val', epoch_loss, self.num_epochs)
-            self.writer.add_scalar('Eval/val', epoch_eval_score, self.num_epochs)
-
             logger.info(f"Validation stats. Loss: {epoch_loss:>9f}. Evaluation score: {epoch_eval_score:>9f}")
 
             return epoch_loss, epoch_eval_score
-
-
-    # def test(self):
-
-    #     epoch_loss = 0
-
-    #     final_confusion_matrix = []
-
-    #     self.eval_criterion.reset()
-    #     self.model.eval()
-
-    #     preview_idx = 0
-
-    #     with torch.no_grad():
-    #         for batch_idx, batch in enumerate(self.loaders["test"]):
-
-    #             input, target = batch
-    #             input, target = input.to(self.device), target.to(self.device)
-
-    #             output, loss = self._forward_pass_(input, target)
-
-    #             self.eval_criterion(output, target)
-                
-    #             confusion_matrix = compute_confusion_matrix(output, target)
-    #             final_confusion_matrix.append(confusion_matrix)
-
-    #             epoch_loss += loss.item()
-
-    #             model_test_preview(self.log_writer, input, target, output, i=preview_idx)
-    #             preview_idx += output.shape[0]
-
-    #         epoch_loss = epoch_loss / len(self.loaders["test"])
-    #         epoch_eval_score = self.eval_criterion.aggregate(reduction="mean").item()
-
-    #         print(f"Test stats. Loss: {epoch_loss:>9f}. Evaluation score: {epoch_eval_score:>9f}")
-
-    #         final_confusion_matrix = np.sum(final_confusion_matrix, axis = 0)
-        
-    #         return epoch_loss, epoch_eval_score, final_confusion_matrix 
 
 
     def fit(self):
@@ -265,6 +251,7 @@ class ModelTrainer:
             # adjust learning rate if necessary
             if isinstance(self.scheduler, ReduceLROnPlateau):
                 self.scheduler.step(val_eval)
+                print(f"Plateau LR scheduler: {self.scheduler.num_bad_epochs}/{self.scheduler.patience} epochs without improvement")
             elif self.scheduler is not None:
                 self.scheduler.step()
 
@@ -357,6 +344,22 @@ class ModelTrainer:
             self.writer.add_histogram(name, value.data.cpu().numpy(), self.num_epochs)
             self.writer.add_histogram(name + "/grad", value.grad.data.cpu().numpy(), self.num_epochs)
     
+
+    # def _log_images(self, input: np.ndarray, target: np.ndarray, prediction: np.ndarray, prefix: str):
+    #     inputs_map = {"inputs": input, "targets": target, "predictions": prediction}
+    #     img_sources = {}
+    #     for name, batch in inputs_map.items():
+    #         if isinstance(batch, list | tuple):
+    #             for i, b in enumerate(batch):
+    #                 img_sources[f"{name}{i}"] = b
+    #         else:
+    #             img_sources[name] = batch
+
+    #     for name, batch in img_sources.items():
+    #         for tag, image in self.tensorboard_formatter(name, batch):
+    #             self.writer.add_image(prefix + tag, image, self.num_iterations)
+                
+
     def _log_images(self, input, target, prediction, i: int, phase: str) -> int:
         """
         Logs one preview image (input/target/prediction) per sample in the batch via
@@ -364,15 +367,17 @@ class ModelTrainer:
         """
         for c_input, c_target, c_pred in zip(input, target, prediction):
 
+            c_pred = (c_pred > 0.5).float() # If this is commented it will save probability maps
+
             c_input, c_target, c_pred = convert_to_numpy(c_input, c_target, c_pred)
 
             input_img = self.tensorboard_formatter(c_input)
             target_img = self.tensorboard_formatter(c_target)
             pred_img = self.tensorboard_formatter(c_pred)
 
-            self.writer.add_image(f"ModelPreview/{phase}/{i}Input", input_img, self.num_epochs, dataformats='HW' if input_img.ndim == 2 else 'HWC')
-            self.writer.add_image(f"ModelPreview/{phase}/{i}Target", target_img, self.num_epochs, dataformats='HW' if target_img.ndim == 2 else 'HWC')
-            self.writer.add_image(f"ModelPreview/{phase}/{i}Pred", pred_img, self.num_epochs, dataformats='HW' if pred_img.ndim == 2 else 'HWC')
+            self.writer.add_image(f"ModelPreview_{phase}/{i}Input", input_img, self.num_epochs, dataformats='HW' if input_img.ndim == 2 else 'HWC')
+            self.writer.add_image(f"ModelPreview_{phase}/{i}Target", target_img, self.num_epochs, dataformats='HW' if target_img.ndim == 2 else 'HWC')
+            self.writer.add_image(f"ModelPreview_{phase}/{i}Pred", pred_img, self.num_epochs, dataformats='HW' if pred_img.ndim == 2 else 'HWC')
 
             i += 1
 

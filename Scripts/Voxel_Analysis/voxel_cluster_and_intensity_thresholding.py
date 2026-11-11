@@ -16,13 +16,11 @@ from compute_direction_and_cut_overlap import (
     cut_overlap,
 )
 
-IMAGE_DIR = "/data/joao/mTBData/B2022.10246/SYBRGold_CD68AL555_LAMAL647_DAPI"
-ODIRNAME = "/data/joao/Materials/Joao_repository/Results/B2022.10246/SYBRGold_CD68AL555_LAMAL647_DAPI/SYBRGold_GET800/"
-
-CHANNEL_MARKERS = "SYBRGold,CD68AL555,LAMAL647,DAPI"
+IMAGE_DIR = "/data/joao/mTBData/20251127_eB.2024.21394/Ammonium_acetate_concentrations_comparison/2M_ammonium_acetate/1st_slide_inside_granuloma"
+ODIRNAME = "/data/joao/Materials/Joao_repository/RESULTS_NEW/SYRBGold_Destaining_Comparison/2M_ammonium_acetate/inside_granuloma/"
+CHANNEL_MARKERS = "CD68AL555,SYBRGold,DAPI,LAMAL647"
 CHANNEL_THRESHOLD_CONDITIONS = "SYBRGold>=800"
 MEAN_CLUSTER_THRESHOLD_CONDITIONS = "DAPI<=250,SYBRGold>=1000"
-
 CLUSTER_SIZE_THRESHOLD = 5
 
 SAVE_TILE_WITH_MASK = False
@@ -30,7 +28,7 @@ MIP_ON_SAVE = False
 
 IMAGE_OVERLAP = 5
 
-NUM_PROCESSERS = 15
+NUM_PROCESSERS = 10
 
 COMPARISON_OPERATORS = {">": op.gt, ">=": op.ge, "<": op.lt, "<=": op.le}
 
@@ -84,6 +82,58 @@ class Cluster_3D:
         mean_intensities = np.where(frac > 0.5, np.ceil(mean_intensities), np.round(mean_intensities, 1))
 
         self.Mean_Intensities = mean_intensities
+
+
+def extract_voxel_size(nd2_metadata) -> dict:
+    voxel_um = dict()
+
+    # All channels have the same voxel size, so we can retrieve the information from any
+    voxel_size_metadata = nd2_metadata.channels[0].volume.axesCalibration
+
+    for axis, size in zip(["PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ"], voxel_size_metadata):
+        voxel_um[axis] = float(size)
+
+    return voxel_um
+
+
+def get_resolution(voxel_size):
+
+    psx = voxel_size["PhysicalSizeX"]
+    psy = voxel_size["PhysicalSizeY"]
+    resolution = (1.0 / psx, 1.0 / psy)
+
+    return resolution
+
+
+def get_metadata(images_path):
+
+    out_metadata = {
+        "mode": "color",
+        "unit": "micron" # TODO: Is this always micron? Can i extract it from the image itself?
+        }
+
+    for image_path in images_path:
+        tpl = read_image(image_path, inc_metadata=True)
+        
+        if tpl is not None:
+        
+            _, metadata = tpl
+
+            if metadata is not None:
+                voxel_size = extract_voxel_size(metadata)
+                resolution = get_resolution(voxel_size)
+
+                out_metadata["spacing"] = voxel_size["PhysicalSizeZ"]
+                out_metadata["resolution"] = resolution
+            
+            else: 
+                continue
+
+            return out_metadata
+        
+    print("Warning: no valid image found, metadata will be incomplete")
+    
+    return out_metadata
 
 
 def build_out_file_sufix(threshold_conditions, prefix = None):
@@ -156,19 +206,31 @@ def concatenate_image_mask(image, threshold_mask):
     if threshold_mask.ndim == 3:
         threshold_mask = threshold_mask[:, np.newaxis, ...]
 
-    threshold_mask = np.where(threshold_mask, 65535.0, 0.0)
-
     image = np.concatenate((image, threshold_mask), axis=1)
 
     return image
 
 
-def write_matrix_tiff(name, image, threshold_mask, odirname, do_max_proj):
+def build_cluster_mask(final_mask, cluster_objects):
+
+    for cluster in cluster_objects:
+
+        z_indexes = cluster.Pixels_coords[:, -3]
+        y_indexes = cluster.Pixels_coords[:, -2]
+        x_indexes = cluster.Pixels_coords[:, -1]
+
+        final_mask[z_indexes, y_indexes, x_indexes] = 255
+
+    return final_mask
+
+
+def write_matrix_tiff(name, image, metadata, threshold_mask, odirname, do_max_proj):
 
     image = concatenate_image_mask(image, threshold_mask)
 
-    axes = "ZCYX"
     img_folder = "Masked_tiles"
+
+    axes = "ZCYX"
 
     if do_max_proj:
         image  = np.max(image, axis=0)
@@ -179,12 +241,18 @@ def write_matrix_tiff(name, image, threshold_mask, odirname, do_max_proj):
 
     odirname = Path(odirname)
     odirname.mkdir(parents=True, exist_ok=True)
+
+    metadata = metadata.copy()
+    metadata["axes"] = axes[-image.ndim:]
+
+    resolution = metadata.pop("resolution", None) if metadata else None
     
     tiff.imwrite(
         f"{odirname}/{name}.tif",
         image.astype(np.uint16),
         imagej=True,
-        metadata={"mode": "color", "axes": axes},
+        metadata=metadata,
+        resolution=resolution
         )
 
 
@@ -224,7 +292,7 @@ def build_cluster_objects(
             round(cluster.centroid[-3], 1),
             cluster.coords
         )
-
+        
         cluster_obj.correct_positions(
             pixels_to_remove_w, pixels_to_remove_h, directions_remove_overlap
         )
@@ -239,6 +307,7 @@ def build_voxel_clusters(args):
 
     (
         image_path,
+        metadata,
         num_channels,
         directions_remove_overlap,
         image_overlap,
@@ -262,7 +331,9 @@ def build_voxel_clusters(args):
     if image.ndim == 3: #CHW -> DCHW
         image = image[np.newaxis]
 
-    img_height, img_width = image.shape[-2:]
+    img_depth, _, img_height, img_width = image.shape
+
+    final_mask = np.zeros((img_depth, img_height, img_width), dtype=np.uint16)
 
     pixels_to_remove_h, pixels_to_remove_w = compute_overlap_pixels(
         image_overlap, img_height, img_width, rounding_mode="ceil"
@@ -295,12 +366,18 @@ def build_voxel_clusters(args):
 
     if not cluster_objects:
         no_intensity = "\t".join("-1" for _ in range(num_channels))
+
+        if save_tile_with_mask:
+            write_matrix_tiff(img_name, image, metadata, final_mask, odirname, mip_on_save)
+
         return f"{img_name}\t-1\t-1\t-1\t-1\t{no_intensity}\n"
 
+    final_mask = build_cluster_mask(final_mask, cluster_objects)
+
     voxel_cluster_info = build_file_report(cluster_objects)
-    
+
     if save_tile_with_mask:
-        write_matrix_tiff(img_name, image, mask_label, odirname, mip_on_save)
+        write_matrix_tiff(img_name, image, metadata, final_mask, odirname, mip_on_save)
 
     return voxel_cluster_info
 
@@ -310,11 +387,11 @@ def main(
     channel_threshold_conditions,
     image_overlap,
     odirname,
-    channel_markers = None,
+    channel_markers = ["SYBRGold", "CD68", "LAM", "DAPI"],
     save_tile_with_mask = True,
     mip_on_save = False,
     mean_cluster_threshold_conditions = None,
-    cluster_size_threshold = None,
+    cluster_size_threshold = 0,
     num_processers: int = 1,
 ):
 
@@ -322,6 +399,8 @@ def main(
     odirname.mkdir(parents=True, exist_ok=True)
 
     images_path = get_images_path(image_dir, ".nd2", ".tif", ".tiff")
+
+    metadata = get_metadata(images_path)
 
     all_directions_remove_overlap = get_all_tiles_directions_to_remove_overlap(
         images_path
@@ -361,6 +440,7 @@ def main(
             
             args_iter = zip(
                 images_path,
+                repeat(metadata),
                 repeat(len(channel_markers)),
                 all_directions_remove_overlap,
                 repeat(image_overlap),

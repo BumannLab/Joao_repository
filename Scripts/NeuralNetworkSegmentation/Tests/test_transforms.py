@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from Scripts.NeuralNetworkSegmentation.transforms import build_transform_pipeline
+from NeuralNetworkSegmentation.augmentation.transforms import build_transform_pipeline
 
 class TestBuildTransformPipeline:
     pass

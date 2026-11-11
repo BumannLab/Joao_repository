@@ -52,6 +52,11 @@ def main(
 
     # Create data loaders
     loaders = get_train_loaders(config)
+    print("Number of batches:", len(loaders["train"]))
+    print("Number of samples:", len(loaders["train"].dataset))
+
+    print("Number of batches:", len(loaders["val"]))
+    print("Number of samples:", len(loaders["val"].dataset))
 
     train_config = config["trainer"]
     resume = train_config.pop("resume", None)

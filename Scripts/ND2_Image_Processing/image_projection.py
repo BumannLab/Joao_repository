@@ -54,10 +54,6 @@ def analyse_clusters_and_pixels(args_iter):
         
 
 
-<<<<<<< Updated upstream
-        write_tiff(out_path, image, out_metadata, resolution)        
-     
-=======
 def get_metadata(images_path):
 
     out_metadata = {
@@ -90,7 +86,6 @@ def get_metadata(images_path):
     
     return out_metadata
 
->>>>>>> Stashed changes
 
 @click.command()
 @click.option("--tiles_dir", help="Folder containing the raw nd2 files")
@@ -102,13 +97,9 @@ def main(tiles_dir, threads):
     odirname = tiles_dir / "MAX"
     odirname.mkdir(exist_ok=True)
 
-<<<<<<< Updated upstream
-    images_path = get_images_path(tiles_dir)
-=======
     images_path = get_images_path(image_dir)
 
     metadata = get_metadata(images_path)
->>>>>>> Stashed changes
     
     with Pool(processes=threads, maxtasksperchild=1) as pool:
 
