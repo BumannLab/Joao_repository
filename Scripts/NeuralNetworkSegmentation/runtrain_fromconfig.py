@@ -2,7 +2,9 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
-import time 
+import time
+
+import torch
 
 from Scripts.NeuralNetworkSegmentation.optimizer import create_optimizer, create_lr_scheduler
 from Scripts.NeuralNetworkSegmentation.models.unet import get_model
@@ -13,7 +15,7 @@ from Scripts.NeuralNetworkSegmentation.train import ModelTrainer
 from Scripts.NeuralNetworkSegmentation.metrics import get_eval_criterion
 from Scripts.NeuralNetworkSegmentation.utils import seed_everything
 
-CONFIG_PATH = "/data/joao/Materials/Joao_repository/Scripts/NeuralNetworkSegmentation/configurations/baseconfig2d_finalversion.yml"
+CONFIG_PATH = "/data/joao/Materials/Joao_repository/Scripts/NeuralNetworkSegmentation/configurations/baseconfig3d_finalversion256x256.yml"
 
 def main(
         config_path,
@@ -24,6 +26,13 @@ def main(
         seed = int(time.time())
         config["loaders"]["seed"] = seed
     seed = config["loaders"]["seed"]
+
+    resume_path = config["trainer"].get("resume")
+    if resume_path:
+        # Offset the seed by the checkpoint's completed epoch count, so a resumed
+        # run doesn't reseed to the exact same RNG state the original run started
+        # from and replay the same augmentation/shuffling sequence epoch-for-epoch.
+        seed += torch.load(resume_path, map_location="cpu")["num_epochs"]
 
     save_dir = config["trainer"]["checkpoint_dir"]
     save_config_yaml(save_dir, config)
