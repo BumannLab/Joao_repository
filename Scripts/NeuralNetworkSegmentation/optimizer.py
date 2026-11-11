@@ -1,3 +1,6 @@
+import importlib
+from typing import Any
+
 from torch import nn, optim
 from torch.optim import Optimizer
 
@@ -75,17 +78,13 @@ def create_optimizer(optimizer_config: dict, model: nn.Module) -> Optimizer:
     return optimizer
 
 
-def create_lr_scheduler(scheduler_config, optimizer): # Handle none~
-
-    if scheduler_config is None:
+def create_lr_scheduler(lr_config: dict, optimizer: Optimizer) -> Any | None:
+    """Creates a learning rate scheduler"""
+    if lr_config is None:
         return None
-
-    scheduler_name = scheduler_config.get("name", {})
-
-    if scheduler_name == "StepLR":
-        step_size = scheduler_config.get("step_size", 100)
-        gamma = scheduler_config.get("gamma", 0.1)
-        return optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
-    
-    else:
-        raise ValueError(f"Unsupported scheduler: {scheduler_name}")
+    class_name = lr_config.pop("name")
+    m = importlib.import_module("torch.optim.lr_scheduler")
+    clazz = getattr(m, class_name)
+    # add optimizer to the config
+    lr_config["optimizer"] = optimizer
+    return clazz(**lr_config)
