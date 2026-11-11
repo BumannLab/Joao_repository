@@ -113,12 +113,21 @@ class SliceReplication3DFilterd(RandomizableTransform, MapTransform):
 class RandSpatialShiftd(RandomizableTransform, MapTransform):
     """Translates the array along spatial axes by a random whole-pixel offset.
 
+    The border exposed by the shift (the side the content moves away from) is
+    filled according to `mode`, using the same semantics as `numpy.pad`.
+
     Args:
         keys (KeysCollection): keys to apply the transform to. Default: ("img", "mask").
         shift_range (Sequence[int]): per spatial-axis maximum absolute shift, in
             pixels/voxels. The offset for each axis is drawn uniformly from
             [-shift_range[i], shift_range[i]]; 0 disables shifting along that axis.
             Default: (0, 20, 20).
+        mode (str): `numpy.pad` mode used to fill the border exposed by the shift,
+            e.g. "constant", "edge" (replicate the edge value), "reflect" (mirror
+            without repeating the edge), "symmetric" (mirror repeating the edge),
+            "wrap" (circular). Note "reflect"/"symmetric" require the shift along
+            an axis to not exceed that axis's size. Default: "constant".
+        pad_value (float): fill value used when mode="constant". Default: 0.
         prob (float): probability of applying the transform. Default: 0.5.
         allow_missing_keys (bool): don't raise if a key (e.g. "mask" during label-less
             inference) is missing. Default: True.
@@ -128,6 +137,8 @@ class RandSpatialShiftd(RandomizableTransform, MapTransform):
         self,
         keys=("img", "mask"),
         shift_range=(0, 20, 20),
+        mode="constant",
+        pad_value=0,
         prob=0.5,
         allow_missing_keys=True,
     ):
@@ -135,6 +146,8 @@ class RandSpatialShiftd(RandomizableTransform, MapTransform):
         RandomizableTransform.__init__(self, prob)
 
         self.shift_range = shift_range
+        self.mode = mode
+        self.pad_value = pad_value
         self._shift = None
 
     def randomize(self, data=None):
@@ -161,20 +174,20 @@ class RandSpatialShiftd(RandomizableTransform, MapTransform):
     def _shift_array(self, array):
 
         shift = (0, *self._shift[: array.ndim - 1])
-        shifted = np.zeros_like(array)
 
-        src_slices, dst_slices = [], []
+        pad_width, crop_slices = [], []
         for dim, s in zip(array.shape, shift):
             if s >= 0:
-                src_slices.append(slice(0, dim - s))
-                dst_slices.append(slice(s, dim))
+                pad_width.append((s, 0))
+                crop_slices.append(slice(0, dim))
             else:
-                src_slices.append(slice(-s, dim))
-                dst_slices.append(slice(0, dim + s))
+                pad_width.append((0, -s))
+                crop_slices.append(slice(-s, dim - s))
 
-        shifted[tuple(dst_slices)] = array[tuple(src_slices)]
+        pad_kwargs = {"constant_values": self.pad_value} if self.mode == "constant" else {}
+        padded = np.pad(array, pad_width, mode=self.mode, **pad_kwargs)
 
-        return shifted
+        return padded[tuple(crop_slices)]
 
 
 class ToIsotropicd(MapTransform):
