@@ -23,6 +23,7 @@ class AbstractUnet(nn.Module):
         act: tuple | str | None = "RELU",
         norm: tuple | str | None = "BATCH",
         dropout: tuple | str | float | None = None,
+        dropout_dim: tuple | str | int | None = None,
         conv_padding: Sequence[int] | int | None = None,
         is_3d = False,
     ):
@@ -51,6 +52,7 @@ class AbstractUnet(nn.Module):
                 norm=norm,
                 bias=bias,
                 dropout=dropout,
+                dropout_dim=dropout_dim,
                 padding=conv_padding,
                 ))
             
@@ -68,6 +70,7 @@ class AbstractUnet(nn.Module):
                 norm=norm,
                 bias=bias,
                 dropout=dropout,
+                dropout_dim=dropout_dim,
                 padding=conv_padding,
                 )
 
@@ -84,6 +87,7 @@ class AbstractUnet(nn.Module):
                 norm=norm,
                 bias=bias,
                 dropout=dropout,
+                dropout_dim=dropout_dim,
                 padding=conv_padding,
                 ))
             
@@ -136,6 +140,7 @@ class UNet2D(AbstractUnet):
         act = "RELU",
         norm = "BATCH",
         dropout = None,
+        dropout_dim = 2,
         conv_padding = None,
         **kwargs
     ):
@@ -150,6 +155,7 @@ class UNet2D(AbstractUnet):
             act,
             norm,
             dropout,
+            dropout_dim,
             conv_padding,
             is_3d = False,
 
@@ -169,6 +175,7 @@ class UNet3D(AbstractUnet):
         act = "RELU",
         norm = "BATCH",
         dropout = None,
+        dropout_dim = 3,
         conv_padding = None,
         **kwargs
     ):
@@ -183,6 +190,7 @@ class UNet3D(AbstractUnet):
             act,
             norm,
             dropout,
+            dropout_dim,
             conv_padding,
             is_3d = True,
         )
@@ -204,15 +212,16 @@ if __name__ == "__main__":
 
     model = UNet3D(
         in_channels = 1,
-        out_channels = 2,
+        out_channels = 1,
         f_maps = [32, 64, 128],
         conv_kernel_size = 3,
         conv_strides = 1,
         layer_order = "NAD",
         act = "RELU",
         norm = "BATCH",
-        dropout = None,
         conv_padding = None,
     )
+
     
-    summary(model, (1, 1, 24, 128, 128), depth=20)
+    summary(model, (1, 1, 24, 256, 256), depth=20)
+

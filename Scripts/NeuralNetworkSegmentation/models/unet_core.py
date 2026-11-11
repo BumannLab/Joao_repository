@@ -22,6 +22,7 @@ class ConvBlock(nn.Module):
         act: tuple | str | None = "RELU",
         norm: tuple | str | None = "BATCH",
         dropout: tuple | str | float | None = None,
+        dropout_dim: tuple | str | int | None = None,
         bias: bool = True,
         padding: Sequence[int] | int | None = None,
     ):
@@ -38,7 +39,7 @@ class ConvBlock(nn.Module):
                 act=act,
                 norm=norm,
                 dropout=dropout,
-                dropout_dim=spatial_dims, # Perhaps add this as input var
+                dropout_dim=dropout_dim,
                 dilation=1,
                 groups=1,
                 bias=bias,
@@ -55,7 +56,7 @@ class ConvBlock(nn.Module):
                 act=act,
                 norm=norm,
                 dropout=dropout,
-                dropout_dim=spatial_dims, # Perhaps add this as input var
+                dropout_dim=dropout_dim,
                 dilation=1,
                 groups=1,
                 bias=bias,
@@ -82,6 +83,7 @@ class Encoder(ConvBlock):
         norm: tuple | str | None = "BATCH",
         bias = True,
         dropout: tuple | str | float | None = None,
+        dropout_dim: tuple | str | int | None = None,
         padding: Sequence[int] | int | None = None,
     ):
         
@@ -95,6 +97,7 @@ class Encoder(ConvBlock):
             act,
             norm,
             dropout,
+            dropout_dim,
             bias,
             padding,
         ) 
@@ -122,6 +125,7 @@ class Decoder(ConvBlock):
         norm: tuple | str | None = "BATCH",
         bias = True,
         dropout: tuple | str | float | None = None,
+        dropout_dim: tuple | str | int | None = None,
         padding: Sequence[int] | int | None = None,
     ):
         
@@ -135,6 +139,7 @@ class Decoder(ConvBlock):
             act,
             norm,
             dropout,
+            dropout_dim,
             bias,
             padding,
         )
