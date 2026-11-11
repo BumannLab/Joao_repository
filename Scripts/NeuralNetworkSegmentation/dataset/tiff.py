@@ -84,7 +84,7 @@ class AbstractTiffDataset(ConfigDataset):
         self.num_images = num_images
         self.channels_to_load = list(channels_to_load) if channels_to_load is not None else None
         self.has_mask = all(sample.mask_path is not None for sample in samples)
-
+        
         if global_normalization:
             logger.info("Calculating mean and std of the raw data...")
             raw_samples = [self._select_channels(read_input(sample.input_path).astype(np.float64)) for sample in self.samples]
@@ -157,6 +157,9 @@ class AbstractTiffDataset(ConfigDataset):
             idx = idx // self.num_images
 
         location = self.samples_slices[idx]
+
+        directions_remove_overlap = self.samples[location.sample_idx].directions_remove_overlap
+
         full_raw = self.get_raw_patch(location)
         raw_input = self._select_channels(full_raw)
 
@@ -168,7 +171,7 @@ class AbstractTiffDataset(ConfigDataset):
                 full_raw = transformed["full_img"]
 
             file_name = self.samples[location.sample_idx].file_name
-            return raw_input, full_raw, file_name
+            return raw_input, full_raw, file_name, directions_remove_overlap
 
         else:
             label = self.get_label_patch(location)
@@ -208,7 +211,11 @@ class AbstractTiffDataset(ConfigDataset):
 
         # load files to process
         group_by = loaders_config.get("group_by", "patient")
-        grouped_samples = collect_patient_samples(raw_path, label_path, group_by)
+
+        # Only useful for test phase
+        overlap = loaders_config.get("overlap", 0)
+
+        grouped_samples = collect_patient_samples(raw_path, label_path, group_by, overlap)
 
         for _, samples in grouped_samples.items():
             yield cls(
